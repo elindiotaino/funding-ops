@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { SiteHeader } from "@/components/SiteHeader";
 
 type FundingProgram = {
   id: number;
@@ -247,7 +248,9 @@ export function FundingOpsDashboard({
   }
 
   return (
-    <main className="shell">
+    <>
+      <SiteHeader basePath={basePath} />
+      <main className="shell">
       <section className="hero panel">
         <div className="hero-copy">
           <p className="eyebrow">Funding Ops</p>
@@ -276,7 +279,7 @@ export function FundingOpsDashboard({
       {error ? <p className="notice error">{error}</p> : null}
 
       <section className="content-grid">
-        <section className="panel">
+        <section className="panel" id="programs">
           <p className="eyebrow">Programs</p>
           <h2>Track funding opportunities and their current status.</h2>
           <div className="list">
@@ -299,7 +302,7 @@ export function FundingOpsDashboard({
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="tasks">
           <p className="eyebrow">Add Program</p>
           <h2>Create or import a funding opportunity.</h2>
           <form className="form-grid" onSubmit={handleProgramSubmit}>
@@ -315,7 +318,7 @@ export function FundingOpsDashboard({
           </form>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="deadlines">
           <p className="eyebrow">Tasks</p>
           <h2>Manage submission checklists and research actions.</h2>
           <div className="list">
@@ -392,5 +395,6 @@ export function FundingOpsDashboard({
         </section>
       </section>
     </main>
+    </>
   );
 }
