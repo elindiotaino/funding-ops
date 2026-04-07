@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { requireFundingOpsApiAccess } from "@/lib/auth/access";
 import { db } from "@/db";
 import { fundingPrograms, fundingTasks } from "@/db/schema";
 
@@ -14,6 +15,11 @@ const taskSchema = z.object({
 });
 
 export async function GET() {
+  const access = await requireFundingOpsApiAccess();
+  if (!access.ok) {
+    return access.response;
+  }
+
   const programs = db.select().from(fundingPrograms).all();
   const tasks = db.select().from(fundingTasks).orderBy(desc(fundingTasks.id)).all();
 
@@ -29,6 +35,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const access = await requireFundingOpsApiAccess();
+  if (!access.ok) {
+    return access.response;
+  }
+
   const json = await request.json();
   const parsed = taskSchema.safeParse(json);
 

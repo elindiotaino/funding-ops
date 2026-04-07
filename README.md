@@ -24,6 +24,7 @@ The extracted MVP includes:
 - funding tasks
 - local SQLite persistence
 - lightweight API routes for creating programs, creating tasks, and updating task status
+- shared Supabase-backed auth and tool authorization via `hub.joche.dev`
 
 ## Hub model
 
@@ -57,3 +58,5 @@ Only split into multiple Vercel projects if one of these becomes true:
 3. Start the app with `npm.cmd run dev`
 
 The database is stored at `data/funding-ops.db`.
+
+You must also provide the shared Supabase env vars used by the hub, because this tool now enforces authenticated access and checks whether the current user has the `funding-ops` grant directly or through an organization.

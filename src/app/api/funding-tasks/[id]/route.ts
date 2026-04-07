@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { requireFundingOpsApiAccess } from "@/lib/auth/access";
 import { db } from "@/db";
 import { fundingTasks } from "@/db/schema";
 
@@ -18,6 +19,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const access = await requireFundingOpsApiAccess();
+  if (!access.ok) {
+    return access.response;
+  }
+
   const { id } = await params;
   const taskId = parseTaskId(id);
 

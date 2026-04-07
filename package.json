@@ -12,6 +12,8 @@
     "db:migrate": "drizzle-kit push"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.7.0",
+    "@supabase/supabase-js": "^2.56.0",
     "better-sqlite3": "^12.2.0",
     "drizzle-orm": "^0.44.5",
     "next": "^15.5.2",
