@@ -33,37 +33,47 @@ export async function canCurrentUserAccessFundingOps() {
     return { user, allowed: true, configured: true };
   }
 
-  const admin = getSupabaseAdminClient();
-  const [directResult, membershipResult, organizationGrantResult] = await Promise.all([
-    admin
-      .from("hub_user_tool_access")
-      .select("tool_key")
-      .eq("profile_id", user.id)
-      .eq("tool_key", "funding-ops")
-      .maybeSingle(),
-    admin
-      .from("hub_organization_members")
-      .select("organization_id")
-      .eq("profile_id", user.id),
-    admin
-      .from("hub_organization_tool_access")
-      .select("organization_id, tool_key")
-      .eq("tool_key", "funding-ops"),
-  ]);
+  try {
+    const admin = getSupabaseAdminClient();
+    const [directResult, membershipResult, organizationGrantResult] = await Promise.all([
+      admin
+        .from("hub_user_tool_access")
+        .select("tool_key")
+        .eq("profile_id", user.id)
+        .eq("tool_key", "funding-ops")
+        .maybeSingle(),
+      admin
+        .from("hub_organization_members")
+        .select("organization_id")
+        .eq("profile_id", user.id),
+      admin
+        .from("hub_organization_tool_access")
+        .select("organization_id, tool_key")
+        .eq("tool_key", "funding-ops"),
+    ]);
 
-  const directAccess = Boolean(directResult.data);
-  const membershipOrganizationIds = new Set(
-    (membershipResult.data ?? []).map((membership) => membership.organization_id),
-  );
-  const orgAccess = (organizationGrantResult.data ?? []).some((grant) =>
-    membershipOrganizationIds.has(grant.organization_id),
-  );
+    const directAccess = Boolean(directResult.data);
+    const membershipOrganizationIds = new Set(
+      (membershipResult.data ?? []).map((membership) => membership.organization_id),
+    );
+    const orgAccess = (organizationGrantResult.data ?? []).some((grant) =>
+      membershipOrganizationIds.has(grant.organization_id),
+    );
 
-  return {
-    user,
-    allowed: directAccess || orgAccess,
-    configured: true,
-  };
+    return {
+      user,
+      allowed: directAccess || orgAccess,
+      configured: true,
+    };
+  } catch (error) {
+    console.error("Error checking funding-ops access:", error);
+    // If admin client fails (e.g. missing service role key), we still have a user but we can't confirm access
+    return {
+      user,
+      allowed: false,
+      configured: false,
+    };
+  }
 }
 
 export async function requireFundingOpsApiAccess() {
