@@ -18,12 +18,14 @@ dashboard hosted at `hub.joche.dev`.
 
 ## Current scope
 
-The extracted MVP includes:
+The current app now includes:
 
-- funding programs
-- funding tasks
+- official-source feed records for Puerto Rico and U.S. federal grants, aid, jobs, incentives, and recovery channels
+- profile-based relevance ranking against company sectors, assistance types, geography, and keywords
+- filters for keyword, category, jurisdiction, and tags
+- notification generation for relevant feed items
+- manual refresh plus a daily cron entry for feed refresh
 - local SQLite persistence
-- lightweight API routes for creating programs, creating tasks, and updating task status
 - shared Supabase-backed auth and tool authorization via `hub.joche.dev`
 
 ## Hub model
@@ -60,3 +62,5 @@ Only split into multiple Vercel projects if one of these becomes true:
 The database is stored at `data/funding-ops.db`.
 
 You must also provide the shared Supabase env vars used by the hub, because this tool now enforces authenticated access and checks whether the current user has the `funding-ops` grant directly or through an organization.
+
+For scheduled refreshes in Vercel, also set `CRON_SECRET` and let Vercel call `/api/feed-refresh` once per day using the configured cron job in `vercel.json`.

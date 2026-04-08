@@ -1,3 +1,9 @@
 {
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/feed-refresh",
+      "schedule": "0 11 * * *"
+    }
+  ]
 }

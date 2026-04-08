@@ -1,93 +1,57 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+
 import { SiteHeader } from "@/components/SiteHeader";
-
-type FundingProgram = {
-  id: number;
-  name: string;
-  sponsor: string | null;
-  maxFunding: string | null;
-  eligibility: string | null;
-  deadline: string | null;
-  sourceUrl: string | null;
-  status: string;
-  notes: string | null;
-  createdAt: string;
-};
-
-type FundingTask = {
-  id: number;
-  programId: number | null;
-  title: string;
-  status: string;
-  dueDate: string | null;
-  notes: string | null;
-  createdAt: string;
-  programName: string;
-};
-
-type DashboardData = {
-  programs: FundingProgram[];
-  tasks: FundingTask[];
-  urgentDeadlines: FundingProgram[];
-  metrics: {
-    totalPrograms: number;
-    activePrograms: number;
-    submittedPrograms: number;
-    awardedPrograms: number;
-    pendingTasks: number;
-  };
-};
+import type { FundingWorkspaceData } from "@/lib/feed";
 
 type FundingOpsDashboardProps = {
   hubUrl: string;
   appUrl: string;
   basePath: string;
-  initialData: DashboardData;
+  initialData: FundingWorkspaceData;
 };
 
-type ProgramFormState = {
-  name: string;
-  sponsor: string;
-  maxFunding: string;
-  eligibility: string;
-  deadline: string;
-  sourceUrl: string;
-  status: string;
-  notes: string;
+type FilterState = {
+  query: string;
+  category: string;
+  jurisdiction: string;
+  tag: string;
+  onlyRecommended: boolean;
 };
 
-type TaskFormState = {
-  programId: string;
-  title: string;
-  status: string;
-  dueDate: string;
-  notes: string;
+type ProfileDraft = {
+  companyName: string;
+  companySummary: string;
+  geography: string;
+  sectors: string;
+  assistanceTypes: string;
+  keywords: string;
+  notificationMode: string;
 };
 
-const initialProgramForm: ProgramFormState = {
-  name: "",
-  sponsor: "",
-  maxFunding: "",
-  eligibility: "",
-  deadline: "",
-  sourceUrl: "",
-  status: "researching",
-  notes: "",
+const initialFilters: FilterState = {
+  query: "",
+  category: "all",
+  jurisdiction: "all",
+  tag: "all",
+  onlyRecommended: false,
 };
 
-const initialTaskForm: TaskFormState = {
-  programId: "",
-  title: "",
-  status: "pending",
-  dueDate: "",
-  notes: "",
-};
+function toCommaList(values: string[]) {
+  return values.join(", ");
+}
+
+function toArray(value: string) {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
 function formatDateLabel(value: string | null) {
   if (!value) {
-    return "No date";
+    return "No fixed deadline";
   }
 
   const parsed = new Date(value);
@@ -108,142 +72,109 @@ export function FundingOpsDashboard({
   basePath,
   initialData,
 }: FundingOpsDashboardProps) {
-  const [programs, setPrograms] = useState(initialData.programs);
-  const [tasks, setTasks] = useState(initialData.tasks);
-  const [programForm, setProgramForm] = useState(initialProgramForm);
-  const [taskForm, setTaskForm] = useState(initialTaskForm);
+  const [workspace, setWorkspace] = useState(initialData);
+  const [filters, setFilters] = useState(initialFilters);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isSavingProgram, setIsSavingProgram] = useState(false);
-  const [isSavingTask, setIsSavingTask] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
+    companyName: initialData.profile.companyName,
+    companySummary: initialData.profile.companySummary,
+    geography: initialData.profile.geography,
+    sectors: toCommaList(initialData.profile.sectors),
+    assistanceTypes: toCommaList(initialData.profile.assistanceTypes),
+    keywords: toCommaList(initialData.profile.keywords),
+    notificationMode: initialData.profile.notificationMode,
+  });
 
-  const metrics = useMemo(
-    () => ({
-      totalPrograms: programs.length,
-      activePrograms: programs.filter((program) => program.status === "active").length,
-      submittedPrograms: programs.filter((program) => program.status === "submitted").length,
-      awardedPrograms: programs.filter((program) => program.status === "awarded").length,
-      pendingTasks: tasks.filter((task) => task.status !== "complete").length,
-    }),
-    [programs, tasks],
+  const filteredItems = useMemo(() => {
+    const query = filters.query.trim().toLowerCase();
+
+    return workspace.items.filter((item) => {
+      const matchesQuery =
+        !query ||
+        [item.title, item.summary, item.eligibility, item.category, item.jurisdiction, ...item.tags, ...item.keywords]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+
+      const matchesCategory = filters.category === "all" || item.category === filters.category;
+      const matchesJurisdiction =
+        filters.jurisdiction === "all" || item.jurisdiction === filters.jurisdiction;
+      const matchesTag = filters.tag === "all" || item.tags.includes(filters.tag);
+      const matchesRecommendation = !filters.onlyRecommended || item.relevanceScore >= 45;
+
+      return (
+        matchesQuery &&
+        matchesCategory &&
+        matchesJurisdiction &&
+        matchesTag &&
+        matchesRecommendation
+      );
+    });
+  }, [filters, workspace.items]);
+
+  const topNotifications = useMemo(
+    () => workspace.notifications.filter((notification) => notification.relevanceScore >= 45),
+    [workspace.notifications],
   );
 
-  const urgentDeadlines = useMemo(
-    () =>
-      programs
-        .filter((program) => program.deadline && !/ongoing|varies|tbd/i.test(program.deadline))
-        .sort((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? ""))
-        .slice(0, 5),
-    [programs],
-  );
-
-  async function handleProgramSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSavingProgram(true);
+  async function handleRefresh() {
+    setIsRefreshing(true);
     setMessage(null);
     setError(null);
 
     try {
-      const response = await fetch(`${basePath}/api/funding-programs`, {
+      const response = await fetch(`${basePath}/api/feed-refresh`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not refresh the official feed.");
+      }
+
+      setWorkspace(payload.workspace);
+      setMessage("Official-source feed refreshed.");
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Could not refresh feed.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  async function handleProfileSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSavingProfile(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch(`${basePath}/api/profile`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: programForm.name,
-          sponsor: programForm.sponsor || null,
-          maxFunding: programForm.maxFunding || null,
-          eligibility: programForm.eligibility || null,
-          deadline: programForm.deadline || null,
-          sourceUrl: programForm.sourceUrl || null,
-          status: programForm.status,
-          notes: programForm.notes || null,
+          companyName: profileDraft.companyName,
+          companySummary: profileDraft.companySummary,
+          geography: profileDraft.geography,
+          sectors: toArray(profileDraft.sectors),
+          assistanceTypes: toArray(profileDraft.assistanceTypes),
+          keywords: toArray(profileDraft.keywords),
+          notificationMode: profileDraft.notificationMode,
         }),
       });
 
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error ?? "Could not save funding program.");
+        throw new Error(payload.error ?? "Could not save company profile.");
       }
 
-      setPrograms((current) => [payload.program, ...current]);
-      setProgramForm(initialProgramForm);
-      setMessage("Funding program added.");
-    } catch (submissionError) {
-      setError(
-        submissionError instanceof Error
-          ? submissionError.message
-          : "Could not save funding program.",
-      );
+      setWorkspace(payload.workspace);
+      setMessage("Company profile saved and recommendations updated.");
+    } catch (profileError) {
+      setError(profileError instanceof Error ? profileError.message : "Could not save profile.");
     } finally {
-      setIsSavingProgram(false);
-    }
-  }
-
-  async function handleTaskSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSavingTask(true);
-    setMessage(null);
-    setError(null);
-
-    try {
-      const response = await fetch(`${basePath}/api/funding-tasks`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          programId: taskForm.programId ? Number(taskForm.programId) : null,
-          title: taskForm.title,
-          status: taskForm.status,
-          dueDate: taskForm.dueDate || null,
-          notes: taskForm.notes || null,
-        }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Could not save funding task.");
-      }
-
-      setTasks((current) => [payload.task, ...current]);
-      setTaskForm(initialTaskForm);
-      setMessage("Funding task added.");
-    } catch (submissionError) {
-      setError(
-        submissionError instanceof Error
-          ? submissionError.message
-          : "Could not save funding task.",
-      );
-    } finally {
-      setIsSavingTask(false);
-    }
-  }
-
-  async function handleTaskStatusUpdate(taskId: number, status: string) {
-    setMessage(null);
-    setError(null);
-
-    try {
-      const response = await fetch(`${basePath}/api/funding-tasks/${taskId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Could not update task.");
-      }
-
-      setTasks((current) =>
-        current.map((task) => (task.id === taskId ? { ...task, status: payload.task.status } : task)),
-      );
-      setMessage("Task updated.");
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Could not update task.");
+      setIsSavingProfile(false);
     }
   }
 
@@ -251,150 +182,136 @@ export function FundingOpsDashboard({
     <>
       <SiteHeader basePath={basePath} />
       <main className="shell">
-      <section className="hero panel">
-        <div className="hero-copy">
-          <p className="eyebrow">Funding Ops</p>
-          <h1>Run grant and funding workflows as a standalone tool.</h1>
-          <p className="lede">
-            This app is extracted from the funding workspace inside{" "}
-            <code>client-acquisition-hub</code> and is intended to plug into{" "}
-            <a href={hubUrl}>hub.joche.dev</a> as one tool in a larger dashboard.
+        <section className="hero panel">
+          <div className="hero-copy">
+            <p className="eyebrow">Funding Ops Feed</p>
+            <h1>Official-source search, filtering, ranking, and notifications for Puerto Rico-focused funding work.</h1>
+            <p className="lede">
+              This workspace ingests the official source catalog, ranks source items against your company profile, and keeps a refreshable feed for grants, aid, jobs, incentives, and recovery notices.
+            </p>
+          </div>
+          <div className="hero-links">
+            <button type="button" onClick={handleRefresh} disabled={isRefreshing}>
+              {isRefreshing ? "Refreshing..." : "Update Feed"}
+            </button>
+            <a className="secondary-link" href={hubUrl}>Back to Hub</a>
+            <a className="secondary-link" href={appUrl}>App Domain</a>
+          </div>
+        </section>
+
+        <section className="stats-grid">
+          <div className="stat-card"><span>Sources</span><strong>{workspace.metrics.totalSources}</strong></div>
+          <div className="stat-card"><span>Feed Items</span><strong>{workspace.metrics.totalItems}</strong></div>
+          <div className="stat-card"><span>High Relevance</span><strong>{workspace.metrics.highlyRelevantItems}</strong></div>
+          <div className="stat-card"><span>Notifications</span><strong>{workspace.metrics.totalNotifications}</strong></div>
+          <div className="stat-card"><span>Filtered Results</span><strong>{filteredItems.length}</strong></div>
+        </section>
+
+        {workspace.lastIngestionRun ? (
+          <p className="notice info">
+            Last refresh: {formatDateLabel(workspace.lastIngestionRun.createdAt)} by {workspace.lastIngestionRun.triggeredBy}. Imported {workspace.lastIngestionRun.itemsUpserted} feed records across {workspace.lastIngestionRun.sourcesUpserted} official sources.
           </p>
-        </div>
-        <div className="hero-links">
-          <a className="primary-link" href={hubUrl}>Back to Hub</a>
-          <a className="secondary-link" href={appUrl}>App Domain</a>
-        </div>
-      </section>
+        ) : null}
+        {message ? <p className="notice success">{message}</p> : null}
+        {error ? <p className="notice error">{error}</p> : null}
 
-      <section className="stats-grid">
-        <div className="stat-card"><span>Total Programs</span><strong>{metrics.totalPrograms}</strong></div>
-        <div className="stat-card"><span>Active</span><strong>{metrics.activePrograms}</strong></div>
-        <div className="stat-card"><span>Submitted</span><strong>{metrics.submittedPrograms}</strong></div>
-        <div className="stat-card"><span>Awarded</span><strong>{metrics.awardedPrograms}</strong></div>
-        <div className="stat-card"><span>Open Tasks</span><strong>{metrics.pendingTasks}</strong></div>
-      </section>
+        <section className="content-grid">
+          <section className="panel" id="profile">
+            <p className="eyebrow">Company Profile</p>
+            <h2>Describe what the organization does so the feed can surface relevant posts first.</h2>
+            <form className="form-grid" onSubmit={handleProfileSave}>
+              <label><span>Company name</span><input value={profileDraft.companyName} onChange={(event) => setProfileDraft((current) => ({ ...current, companyName: event.target.value }))} /></label>
+              <label><span>Geography</span><input value={profileDraft.geography} onChange={(event) => setProfileDraft((current) => ({ ...current, geography: event.target.value }))} /></label>
+              <label className="full"><span>What the company does</span><textarea rows={4} value={profileDraft.companySummary} onChange={(event) => setProfileDraft((current) => ({ ...current, companySummary: event.target.value }))} /></label>
+              <label><span>Sectors</span><input value={profileDraft.sectors} onChange={(event) => setProfileDraft((current) => ({ ...current, sectors: event.target.value }))} placeholder="small business, housing, resilience" /></label>
+              <label><span>Assistance types</span><input value={profileDraft.assistanceTypes} onChange={(event) => setProfileDraft((current) => ({ ...current, assistanceTypes: event.target.value }))} placeholder="grants, jobs, incentives" /></label>
+              <label className="full"><span>Tracked keywords</span><input value={profileDraft.keywords} onChange={(event) => setProfileDraft((current) => ({ ...current, keywords: event.target.value }))} placeholder="Puerto Rico, entrepreneurship, recovery" /></label>
+              <label><span>Notification mode</span><select value={profileDraft.notificationMode} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationMode: event.target.value }))}><option value="digest">digest</option><option value="instant">instant</option><option value="muted">muted</option></select></label>
+              <button type="submit" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button>
+            </form>
+          </section>
 
-      {message ? <p className="notice success">{message}</p> : null}
-      {error ? <p className="notice error">{error}</p> : null}
+          <section className="panel" id="filters">
+            <p className="eyebrow">Search And Filters</p>
+            <h2>Filter the feed by keyword, type, jurisdiction, and tags.</h2>
+            <div className="form-grid">
+              <label className="full"><span>Keyword search</span><input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="grants, Puerto Rico, housing, jobs" /></label>
+              <label><span>Category</span><select value={filters.category} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">all</option>{workspace.filters.categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+              <label><span>Jurisdiction</span><select value={filters.jurisdiction} onChange={(event) => setFilters((current) => ({ ...current, jurisdiction: event.target.value }))}><option value="all">all</option>{workspace.filters.jurisdictions.map((jurisdiction) => <option key={jurisdiction} value={jurisdiction}>{jurisdiction}</option>)}</select></label>
+              <label><span>Tag</span><select value={filters.tag} onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))}><option value="all">all</option>{workspace.filters.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+              <label className="checkbox-row"><input type="checkbox" checked={filters.onlyRecommended} onChange={(event) => setFilters((current) => ({ ...current, onlyRecommended: event.target.checked }))} /><span>Only show relevance score 45+</span></label>
+            </div>
+          </section>
 
-      <section className="content-grid">
-        <section className="panel" id="programs">
-          <p className="eyebrow">Programs</p>
-          <h2>Track funding opportunities and their current status.</h2>
+          <section className="panel" id="notifications">
+            <p className="eyebrow">Notifications</p>
+            <h2>Recommended items generated from the current profile.</h2>
+            <div className="list">
+              {topNotifications.length === 0 ? (
+                <div className="empty">No notifications yet. Save a profile or refresh the feed.</div>
+              ) : (
+                topNotifications.map((notification) => (
+                  <article className="list-item" key={notification.id}>
+                    <div className="list-header">
+                      <strong>{notification.title}</strong>
+                      <span className="pill score-pill">{notification.relevanceScore}</span>
+                    </div>
+                    <p>{notification.message}</p>
+                    <p>{notification.reasons.join(" | ")}</p>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="panel" id="sources">
+            <p className="eyebrow">Source Registry</p>
+            <h2>Official source inventory currently feeding the workspace.</h2>
+            <div className="list">
+              {workspace.sources.map((source) => (
+                <article className="list-item" key={source.id}>
+                  <div className="list-header">
+                    <strong>{source.name}</strong>
+                    <span className="pill">{source.jurisdiction}</span>
+                  </div>
+                  <p>{source.summary}</p>
+                  <p>Interface: {source.interfaceType}</p>
+                  <p>Programs: {source.programTypes.join(", ")}</p>
+                  <p>Cadence: {source.updateCadence}</p>
+                  <p><a href={source.url} target="_blank" rel="noreferrer">Open source</a></p>
+                </article>
+              ))}
+            </div>
+          </section>
+        </section>
+
+        <section className="panel" id="feed">
+          <p className="eyebrow">Ranked Feed</p>
+          <h2>Relevance-ranked official-source items.</h2>
           <div className="list">
-            {programs.map((program) => (
-              <article className="list-item" key={program.id}>
-                <div className="list-header">
-                  <strong>{program.name}</strong>
-                  <span className={`pill status-${program.status}`}>{program.status}</span>
-                </div>
-                <p>{program.sponsor ?? "Sponsor pending"}</p>
-                <p>Funding: {program.maxFunding ?? "TBD"}</p>
-                <p>Deadline: {formatDateLabel(program.deadline)}</p>
-                <p>{program.eligibility ?? "Eligibility notes pending."}</p>
-                {program.sourceUrl ? (
-                  <p><a href={program.sourceUrl} target="_blank" rel="noreferrer">Source</a></p>
-                ) : null}
-                <p>{program.notes ?? "No notes yet."}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel" id="tasks">
-          <p className="eyebrow">Add Program</p>
-          <h2>Create or import a funding opportunity.</h2>
-          <form className="form-grid" onSubmit={handleProgramSubmit}>
-            <label><span>Name</span><input required value={programForm.name} onChange={(event) => setProgramForm((current) => ({ ...current, name: event.target.value }))} /></label>
-            <label><span>Sponsor</span><input value={programForm.sponsor} onChange={(event) => setProgramForm((current) => ({ ...current, sponsor: event.target.value }))} /></label>
-            <label><span>Max funding</span><input value={programForm.maxFunding} onChange={(event) => setProgramForm((current) => ({ ...current, maxFunding: event.target.value }))} /></label>
-            <label><span>Deadline</span><input value={programForm.deadline} onChange={(event) => setProgramForm((current) => ({ ...current, deadline: event.target.value }))} placeholder="2026-05-01 or Ongoing" /></label>
-            <label className="full"><span>Eligibility</span><textarea rows={3} value={programForm.eligibility} onChange={(event) => setProgramForm((current) => ({ ...current, eligibility: event.target.value }))} /></label>
-            <label><span>Status</span><select value={programForm.status} onChange={(event) => setProgramForm((current) => ({ ...current, status: event.target.value }))}><option value="researching">researching</option><option value="active">active</option><option value="submitted">submitted</option><option value="awarded">awarded</option><option value="archived">archived</option></select></label>
-            <label className="full"><span>Source URL</span><input value={programForm.sourceUrl} onChange={(event) => setProgramForm((current) => ({ ...current, sourceUrl: event.target.value }))} /></label>
-            <label className="full"><span>Notes</span><textarea rows={3} value={programForm.notes} onChange={(event) => setProgramForm((current) => ({ ...current, notes: event.target.value }))} /></label>
-            <button type="submit" disabled={isSavingProgram}>{isSavingProgram ? "Saving..." : "Add Program"}</button>
-          </form>
-        </section>
-
-        <section className="panel" id="deadlines">
-          <p className="eyebrow">Tasks</p>
-          <h2>Manage submission checklists and research actions.</h2>
-          <div className="list">
-            {tasks.map((task) => (
-              <article className="list-item" key={task.id}>
-                <div className="list-header">
-                  <strong>{task.title}</strong>
-                  <select
-                    className="inline-select"
-                    value={task.status}
-                    onChange={(event) => handleTaskStatusUpdate(task.id, event.target.value)}
-                  >
-                    <option value="pending">pending</option>
-                    <option value="in-progress">in-progress</option>
-                    <option value="complete">complete</option>
-                  </select>
-                </div>
-                <p>Program: {task.programName}</p>
-                <p>Due: {formatDateLabel(task.dueDate)}</p>
-                <p>{task.notes ?? "No notes yet."}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel">
-          <p className="eyebrow">Add Task</p>
-          <h2>Attach tasks to a specific program or keep them unassigned.</h2>
-          <form className="form-grid" onSubmit={handleTaskSubmit}>
-            <label><span>Program</span><select value={taskForm.programId} onChange={(event) => setTaskForm((current) => ({ ...current, programId: event.target.value }))}><option value="">Unassigned</option>{programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>
-            <label><span>Status</span><select value={taskForm.status} onChange={(event) => setTaskForm((current) => ({ ...current, status: event.target.value }))}><option value="pending">pending</option><option value="in-progress">in-progress</option><option value="complete">complete</option></select></label>
-            <label className="full"><span>Title</span><input required value={taskForm.title} onChange={(event) => setTaskForm((current) => ({ ...current, title: event.target.value }))} /></label>
-            <label><span>Due date</span><input type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((current) => ({ ...current, dueDate: event.target.value }))} /></label>
-            <label className="full"><span>Notes</span><textarea rows={3} value={taskForm.notes} onChange={(event) => setTaskForm((current) => ({ ...current, notes: event.target.value }))} /></label>
-            <button type="submit" disabled={isSavingTask}>{isSavingTask ? "Saving..." : "Add Task"}</button>
-          </form>
-        </section>
-
-        <section className="panel">
-          <p className="eyebrow">Deadlines</p>
-          <h2>Surface the next application deadlines.</h2>
-          <div className="list">
-            {urgentDeadlines.length === 0 ? (
-              <div className="empty">No fixed deadlines recorded yet.</div>
+            {filteredItems.length === 0 ? (
+              <div className="empty">No feed items match the current filters.</div>
             ) : (
-              urgentDeadlines.map((program) => (
-                <article className="list-item" key={program.id}>
-                  <strong>{program.name}</strong>
-                  <p>{formatDateLabel(program.deadline)}</p>
-                  <p>{program.sponsor ?? "Sponsor pending"}</p>
+              filteredItems.map((item) => (
+                <article className="list-item" key={item.id}>
+                  <div className="list-header">
+                    <strong>{item.title}</strong>
+                    <span className="pill score-pill">{item.relevanceScore}</span>
+                  </div>
+                  <p>{item.summary}</p>
+                  <p>Audience: {item.audience}</p>
+                  <p>Eligibility: {item.eligibility}</p>
+                  <p>Geography: {item.geography}</p>
+                  <p>Deadline: {formatDateLabel(item.deadline)}</p>
+                  <p>Tags: {item.tags.join(", ")}</p>
+                  <p>Reasons: {item.reasons.length > 0 ? item.reasons.join(" | ") : "No strong profile signals yet."}</p>
+                  <p><a href={item.url} target="_blank" rel="noreferrer">Open item source</a></p>
                 </article>
               ))
             )}
           </div>
         </section>
-
-        <section className="panel">
-          <p className="eyebrow">Deployment Model</p>
-          <h2>One repo, many domains.</h2>
-          <div className="list">
-            <article className="list-item">
-              <strong>Primary repo</strong>
-              <p><code>funding-ops</code> should own the source code and deployment config.</p>
-            </article>
-            <article className="list-item">
-              <strong>Hub shell</strong>
-              <p><code>hub.joche.dev</code> should list tools and deep-link into this app.</p>
-            </article>
-            <article className="list-item">
-              <strong>Additional domains</strong>
-              <p>Point <code>funding-ops.joche.dev</code> and future domains like <code>funding.stimulo.ai</code> at the same Vercel project unless they need tenant-specific data isolation.</p>
-            </article>
-          </div>
-        </section>
-      </section>
-    </main>
+      </main>
     </>
   );
 }

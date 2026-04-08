@@ -6,9 +6,10 @@ type SiteHeaderProps = {
 };
 
 const navItems = [
-  { label: "Programs", href: "#programs" },
-  { label: "Tasks", href: "#tasks" },
-  { label: "Deadlines", href: "#deadlines" },
+  { label: "Feed", href: "#feed" },
+  { label: "Profile", href: "#profile" },
+  { label: "Notifications", href: "#notifications" },
+  { label: "Sources", href: "#sources" },
 ];
 
 export function SiteHeader({ basePath }: SiteHeaderProps) {

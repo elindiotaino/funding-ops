@@ -3,8 +3,7 @@ import { redirect } from "next/navigation";
 import { FundingOpsDashboard } from "@/components/FundingOpsDashboard";
 import { canCurrentUserAccessFundingOps } from "@/lib/auth/access";
 import { bootstrapDatabase } from "@/db/bootstrap";
-import { getDashboardData } from "@/lib/queries";
-import { seedCoreData } from "@/lib/seed";
+import { getFundingWorkspaceData, initializeFundingFeed } from "@/lib/feed";
 import { hasSupabaseAuthEnv } from "@/lib/supabase/env";
 
 export const dynamic = "force-dynamic";
@@ -46,14 +45,14 @@ export default async function HomePage() {
     }
 
     bootstrapDatabase();
-    seedCoreData();
+    initializeFundingFeed();
 
     return (
       <FundingOpsDashboard
         appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "https://funding-ops.joche.dev"}
         basePath={basePath}
         hubUrl={process.env.NEXT_PUBLIC_HUB_URL ?? "https://hub.joche.dev"}
-        initialData={getDashboardData()}
+        initialData={getFundingWorkspaceData()}
       />
     );
   } catch (error) {

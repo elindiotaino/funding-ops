@@ -183,6 +183,12 @@ button:hover {
   color: var(--danger);
 }
 
+.notice.info {
+  border-color: rgba(56, 189, 248, 0.22);
+  background: rgba(56, 189, 248, 0.12);
+  color: #c4f1ff;
+}
+
 .list {
   display: grid;
   gap: 14px;
@@ -229,6 +235,11 @@ button:hover {
   background: rgba(56, 189, 248, 0.18);
 }
 
+.score-pill {
+  background: rgba(56, 189, 248, 0.18);
+  color: #d9f7ff;
+}
+
 .form-grid {
   display: grid;
   gap: 14px;
@@ -242,6 +253,17 @@ button:hover {
 
 .form-grid label.full {
   grid-column: 1 / -1;
+}
+
+.checkbox-row {
+  grid-column: 1 / -1;
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+}
+
+.checkbox-row input {
+  width: auto;
 }
 
 input,
