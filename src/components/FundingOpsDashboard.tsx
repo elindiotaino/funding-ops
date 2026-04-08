@@ -28,6 +28,8 @@ type ProfileDraft = {
   assistanceTypes: string;
   keywords: string;
   notificationMode: string;
+  notificationEmail: string;
+  dailySummaryEnabled: boolean;
 };
 
 const initialFilters: FilterState = {
@@ -86,6 +88,8 @@ export function FundingOpsDashboard({
     assistanceTypes: toCommaList(initialData.profile.assistanceTypes),
     keywords: toCommaList(initialData.profile.keywords),
     notificationMode: initialData.profile.notificationMode,
+    notificationEmail: initialData.profile.notificationEmail,
+    dailySummaryEnabled: initialData.profile.dailySummaryEnabled,
   });
 
   const filteredItems = useMemo(() => {
@@ -161,6 +165,8 @@ export function FundingOpsDashboard({
           assistanceTypes: toArray(profileDraft.assistanceTypes),
           keywords: toArray(profileDraft.keywords),
           notificationMode: profileDraft.notificationMode,
+          notificationEmail: profileDraft.notificationEmail,
+          dailySummaryEnabled: profileDraft.dailySummaryEnabled,
         }),
       });
 
@@ -218,7 +224,7 @@ export function FundingOpsDashboard({
         <section className="content-grid">
           <section className="panel" id="profile">
             <p className="eyebrow">Company Profile</p>
-            <h2>Describe what the organization does so the feed can surface relevant posts first.</h2>
+            <h2>Describe what the organization does and how notifications should be delivered.</h2>
             <form className="form-grid" onSubmit={handleProfileSave}>
               <label><span>Company name</span><input value={profileDraft.companyName} onChange={(event) => setProfileDraft((current) => ({ ...current, companyName: event.target.value }))} /></label>
               <label><span>Geography</span><input value={profileDraft.geography} onChange={(event) => setProfileDraft((current) => ({ ...current, geography: event.target.value }))} /></label>
@@ -227,6 +233,8 @@ export function FundingOpsDashboard({
               <label><span>Assistance types</span><input value={profileDraft.assistanceTypes} onChange={(event) => setProfileDraft((current) => ({ ...current, assistanceTypes: event.target.value }))} placeholder="grants, jobs, incentives" /></label>
               <label className="full"><span>Tracked keywords</span><input value={profileDraft.keywords} onChange={(event) => setProfileDraft((current) => ({ ...current, keywords: event.target.value }))} placeholder="Puerto Rico, entrepreneurship, recovery" /></label>
               <label><span>Notification mode</span><select value={profileDraft.notificationMode} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationMode: event.target.value }))}><option value="digest">digest</option><option value="instant">instant</option><option value="muted">muted</option></select></label>
+              <label><span>Daily summary email</span><input type="email" value={profileDraft.notificationEmail} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationEmail: event.target.value }))} placeholder="alerts@example.com" /></label>
+              <label className="checkbox-row"><input type="checkbox" checked={profileDraft.dailySummaryEnabled} onChange={(event) => setProfileDraft((current) => ({ ...current, dailySummaryEnabled: event.target.checked }))} /><span>Send daily summary email when enabled</span></label>
               <button type="submit" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button>
             </form>
           </section>
@@ -246,6 +254,12 @@ export function FundingOpsDashboard({
           <section className="panel" id="notifications">
             <p className="eyebrow">Notifications</p>
             <h2>Recommended items generated from the current profile.</h2>
+            <p className="lede">
+              Daily summary email is {workspace.profile.dailySummaryEnabled ? "enabled" : "disabled"}.
+              {workspace.profile.notificationEmail
+                ? ` Summary destination: ${workspace.profile.notificationEmail}.`
+                : " Add an email address in the profile section to receive summaries."}
+            </p>
             <div className="list">
               {topNotifications.length === 0 ? (
                 <div className="empty">No notifications yet. Save a profile or refresh the feed.</div>

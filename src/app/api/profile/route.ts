@@ -13,6 +13,8 @@ const profileSchema = z.object({
   assistanceTypes: z.array(z.string().trim().min(1)).max(12),
   keywords: z.array(z.string().trim().min(1)).max(20),
   notificationMode: z.enum(["digest", "instant", "muted"]),
+  notificationEmail: z.string().trim().email().or(z.literal("")),
+  dailySummaryEnabled: z.boolean(),
 });
 
 export async function POST(request: Request) {

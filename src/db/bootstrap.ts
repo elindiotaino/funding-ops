@@ -70,6 +70,9 @@ export function bootstrapDatabase() {
       assistance_types TEXT NOT NULL DEFAULT '[]',
       keywords TEXT NOT NULL DEFAULT '[]',
       notification_mode TEXT NOT NULL DEFAULT 'digest',
+      notification_email TEXT,
+      daily_summary_enabled INTEGER NOT NULL DEFAULT 0,
+      last_daily_summary_at TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 

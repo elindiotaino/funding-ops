@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 
 import { bootstrapDatabase } from "@/db/bootstrap";
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
-import { initializeFundingFeed, refreshFundingFeed } from "@/lib/feed";
+import { sendDailySummaryEmail } from "@/lib/email";
+import {
+  getDailySummaryEmailPayload,
+  initializeFundingFeed,
+  markDailySummarySent,
+  refreshFundingFeed,
+} from "@/lib/feed";
 
 function isCronAuthorized(request: Request) {
   const configuredSecret = process.env.CRON_SECRET?.trim();
@@ -23,7 +29,23 @@ export async function GET(request: Request) {
   }
 
   const workspace = refreshFundingFeed("cron");
-  return NextResponse.json({ workspace });
+  const summary = getDailySummaryEmailPayload();
+
+  if (!summary.shouldSend) {
+    return NextResponse.json({ workspace, dailySummary: summary });
+  }
+
+  const emailResult = await sendDailySummaryEmail(summary.payload);
+  if (emailResult.sent) {
+    markDailySummarySent();
+  }
+
+  return NextResponse.json({
+    workspace,
+    dailySummary: emailResult.sent
+      ? { sent: true }
+      : { sent: false, skipped: emailResult.skipped, reason: emailResult.reason },
+  });
 }
 
 export async function POST() {

@@ -63,4 +63,10 @@ The database is stored at `data/funding-ops.db`.
 
 You must also provide the shared Supabase env vars used by the hub, because this tool now enforces authenticated access and checks whether the current user has the `funding-ops` grant directly or through an organization.
 
-For scheduled refreshes in Vercel, also set `CRON_SECRET` and let Vercel call `/api/feed-refresh` once per day using the configured cron job in `vercel.json`.
+For scheduled refreshes in Vercel, set:
+
+- `CRON_SECRET` for the daily cron request to `/api/feed-refresh`
+- `RESEND_API_KEY` for outbound notification email delivery
+- `NOTIFICATION_FROM_EMAIL` for the sender address used in daily summary emails
+
+When daily summary email is enabled in the app and a notification email is set on the company profile, the cron refresh will send one summary email per day with the top relevant items.

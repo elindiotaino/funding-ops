@@ -37,11 +37,14 @@ type CompanyProfileInput = {
   assistanceTypes: string[];
   keywords: string[];
   notificationMode: string;
+  notificationEmail: string;
+  dailySummaryEnabled: boolean;
 };
 
 type RawCompanyProfile = CompanyProfileInput & {
   id: number;
   updatedAt: string;
+  lastDailySummaryAt: string | null;
 };
 
 type RawFeedItem = {
@@ -133,6 +136,8 @@ const defaultProfile: CompanyProfileInput = {
   assistanceTypes: ["Grants", "Technical assistance", "Jobs", "Recovery funding"],
   keywords: ["Puerto Rico", "small business", "entrepreneurship", "resilience", "grants"],
   notificationMode: "digest",
+  notificationEmail: "",
+  dailySummaryEnabled: false,
 };
 
 function nowIso() {
@@ -505,6 +510,9 @@ function getProfile() {
         assistance_types as assistanceTypes,
         keywords,
         notification_mode as notificationMode,
+        notification_email as notificationEmail,
+        daily_summary_enabled as dailySummaryEnabled,
+        last_daily_summary_at as lastDailySummaryAt,
         updated_at as updatedAt
       FROM company_profile
       WHERE id = 1
@@ -516,6 +524,7 @@ function getProfile() {
       id: 1,
       ...defaultProfile,
       updatedAt: nowIso(),
+      lastDailySummaryAt: null,
     } satisfies RawCompanyProfile;
   }
 
@@ -528,6 +537,9 @@ function getProfile() {
     assistanceTypes: parseArray(String(row.assistanceTypes ?? "[]")),
     keywords: parseArray(String(row.keywords ?? "[]")),
     notificationMode: String(row.notificationMode ?? "digest"),
+    notificationEmail: String(row.notificationEmail ?? ""),
+    dailySummaryEnabled: Boolean(Number(row.dailySummaryEnabled ?? 0)),
+    lastDailySummaryAt: row.lastDailySummaryAt ? String(row.lastDailySummaryAt) : null,
     updatedAt: String(row.updatedAt ?? nowIso()),
   } satisfies RawCompanyProfile;
 }
@@ -897,8 +909,10 @@ export function initializeFundingFeed() {
           sectors,
           assistance_types,
           keywords,
-          notification_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          notification_mode,
+          notification_email,
+          daily_summary_enabled
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         1,
@@ -909,6 +923,8 @@ export function initializeFundingFeed() {
         stringifyArray(defaultProfile.assistanceTypes),
         stringifyArray(defaultProfile.keywords),
         defaultProfile.notificationMode,
+        defaultProfile.notificationEmail,
+        defaultProfile.dailySummaryEnabled ? 1 : 0,
       );
   }
 
@@ -930,6 +946,8 @@ export function saveCompanyProfile(input: CompanyProfileInput) {
         assistance_types = ?,
         keywords = ?,
         notification_mode = ?,
+        notification_email = ?,
+        daily_summary_enabled = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = 1
     `)
@@ -941,6 +959,8 @@ export function saveCompanyProfile(input: CompanyProfileInput) {
       stringifyArray(input.assistanceTypes),
       stringifyArray(input.keywords),
       input.notificationMode,
+      input.notificationEmail,
+      input.dailySummaryEnabled ? 1 : 0,
     );
 
   syncNotificationsForProfile(getProfile());
@@ -951,6 +971,67 @@ export function refreshFundingFeed(triggeredBy: string) {
   syncSeedData(triggeredBy, "Manual or scheduled official-source refresh");
   syncNotificationsForProfile(getProfile());
   return getFundingWorkspaceData();
+}
+
+function startOfUtcDay(value: string) {
+  return new Date(`${value.slice(0, 10)}T00:00:00.000Z`).getTime();
+}
+
+export function getDailySummaryEmailPayload() {
+  const profile = getProfile();
+  const items = getFundingWorkspaceData().items.filter((item) => item.relevanceScore >= 55).slice(0, 5);
+
+  if (!profile.dailySummaryEnabled) {
+    return { shouldSend: false as const, reason: "Daily summary is disabled." };
+  }
+
+  if (!profile.notificationEmail) {
+    return { shouldSend: false as const, reason: "Notification email is missing." };
+  }
+
+  if (profile.notificationMode === "muted") {
+    return { shouldSend: false as const, reason: "Notifications are muted." };
+  }
+
+  if (items.length === 0) {
+    return { shouldSend: false as const, reason: "No relevant items available for summary." };
+  }
+
+  if (
+    profile.lastDailySummaryAt &&
+    startOfUtcDay(profile.lastDailySummaryAt) === startOfUtcDay(nowIso())
+  ) {
+    return { shouldSend: false as const, reason: "Daily summary already sent today." };
+  }
+
+  return {
+    shouldSend: true as const,
+    payload: {
+      companyName: profile.companyName,
+      email: profile.notificationEmail,
+      items: items.map((item) => ({
+        title: item.title,
+        url: item.url,
+        relevanceScore: item.relevanceScore,
+        reasons: item.reasons,
+        category: item.category,
+        jurisdiction: item.jurisdiction,
+        deadline: item.deadline,
+      })),
+    },
+  };
+}
+
+export function markDailySummarySent() {
+  sqlite
+    .prepare(`
+      UPDATE company_profile
+      SET
+        last_daily_summary_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = 1
+    `)
+    .run();
 }
 
 export function getFundingWorkspaceData() {
