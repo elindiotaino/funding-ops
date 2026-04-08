@@ -66,7 +66,15 @@ You must also provide the shared Supabase env vars used by the hub, because this
 For scheduled refreshes in Vercel, set:
 
 - `CRON_SECRET` for the daily cron request to `/api/feed-refresh`
-- `RESEND_API_KEY` for outbound notification email delivery
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, and `SMTP_PASS` for outbound SMTP delivery
 - `NOTIFICATION_FROM_EMAIL` for the sender address used in daily summary emails
+
+For Google Workspace / Gmail app-password sending, use:
+
+- `SMTP_HOST=smtp.gmail.com`
+- `SMTP_PORT=465`
+- `SMTP_SECURE=true`
+- `SMTP_USER=<your Google mailbox>`
+- `SMTP_PASS=<your Google app password>`
 
 When daily summary email is enabled in the app and a notification email is set on the company profile, the cron refresh will send one summary email per day with the top relevant items.

@@ -1,3 +1,5 @@
+import nodemailer from "nodemailer";
+
 type DailySummaryItem = {
   title: string;
   url: string;
@@ -76,36 +78,38 @@ function buildHtmlBody(payload: DailySummaryPayload) {
 }
 
 export async function sendDailySummaryEmail(payload: DailySummaryPayload) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const host = process.env.SMTP_HOST?.trim();
+  const port = Number(process.env.SMTP_PORT ?? "465");
+  const secure = (process.env.SMTP_SECURE ?? "true").trim().toLowerCase() === "true";
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
   const from = process.env.NOTIFICATION_FROM_EMAIL?.trim();
 
-  if (!apiKey || !from) {
+  if (!host || !user || !pass || !from) {
     return {
       sent: false as const,
       skipped: true as const,
-      reason: "Missing RESEND_API_KEY or NOTIFICATION_FROM_EMAIL.",
+      reason: "Missing SMTP_HOST, SMTP_USER, SMTP_PASS, or NOTIFICATION_FROM_EMAIL.",
     };
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: {
+      user,
+      pass,
     },
-    body: JSON.stringify({
-      from,
-      to: [payload.email],
-      subject: `Daily Funding Ops Summary for ${payload.companyName}`,
-      text: buildTextBody(payload),
-      html: buildHtmlBody(payload),
-    }),
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Resend email failed: ${response.status} ${body}`);
-  }
+  await transporter.sendMail({
+    from,
+    to: payload.email,
+    subject: `Daily Funding Ops Summary for ${payload.companyName}`,
+    text: buildTextBody(payload),
+    html: buildHtmlBody(payload),
+  });
 
   return {
     sent: true as const,
