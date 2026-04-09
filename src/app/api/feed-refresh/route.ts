@@ -1,13 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { bootstrapDatabase } from "@/db/bootstrap";
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
-import {
-  getDailySummaryEmailPayload,
-  initializeFundingFeed,
-  markDailySummarySent,
-  refreshFundingFeed,
-} from "@/lib/feed";
 
 function isCronAuthorized(request: Request) {
   const configuredSecret = process.env.CRON_SECRET?.trim();
@@ -24,6 +17,14 @@ export async function GET(request: Request) {
     if (!isCronAuthorized(request)) {
       return NextResponse.json({ error: "Unauthorized cron request." }, { status: 401 });
     }
+
+    const { bootstrapDatabase } = await import("@/db/bootstrap");
+    const {
+      getDailySummaryEmailPayload,
+      initializeFundingFeed,
+      markDailySummarySent,
+      refreshFundingFeed,
+    } = await import("@/lib/feed");
 
     bootstrapDatabase();
     initializeFundingFeed();
@@ -61,6 +62,9 @@ export async function GET(request: Request) {
 
 export async function POST() {
   try {
+    const { bootstrapDatabase } = await import("@/db/bootstrap");
+    const { initializeFundingFeed, refreshFundingFeed } = await import("@/lib/feed");
+
     bootstrapDatabase();
     initializeFundingFeed();
 
