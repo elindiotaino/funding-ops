@@ -14,9 +14,9 @@ type FundingOpsDashboardProps = {
 
 type FilterState = {
   query: string;
-  category: string;
-  jurisdiction: string;
-  tag: string;
+  categories: string[];
+  jurisdictions: string[];
+  tags: string[];
   onlyRecommended: boolean;
 };
 
@@ -30,13 +30,16 @@ type ProfileDraft = {
   notificationMode: string;
   notificationEmail: string;
   dailySummaryEnabled: boolean;
+  emailCategories: string[];
+  emailJurisdictions: string[];
+  emailTags: string[];
 };
 
 const initialFilters: FilterState = {
   query: "",
-  category: "all",
-  jurisdiction: "all",
-  tag: "all",
+  categories: [],
+  jurisdictions: [],
+  tags: [],
   onlyRecommended: false,
 };
 
@@ -49,6 +52,12 @@ function toArray(value: string) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function toggleSelection(values: string[], value: string) {
+  return values.includes(value)
+    ? values.filter((entry) => entry !== value)
+    : [...values, value];
 }
 
 function formatDateLabel(value: string | null) {
@@ -66,6 +75,55 @@ function formatDateLabel(value: string | null) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function prettifyLabel(value: string) {
+  return value
+    .split(/[-_]/g)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function SelectionGroup({
+  label,
+  options,
+  selected,
+  onToggle,
+  emptyCopy,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  emptyCopy?: string;
+}) {
+  return (
+    <div className="selection-group">
+      <div className="selection-group__header">
+        <span>{label}</span>
+        <strong>{selected.length === 0 ? "All" : `${selected.length} selected`}</strong>
+      </div>
+      {options.length === 0 ? (
+        <p className="selection-group__empty">{emptyCopy ?? "No options yet."}</p>
+      ) : (
+        <div className="chip-grid">
+          {options.map((option) => {
+            const active = selected.includes(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                className={`filter-chip ${active ? "filter-chip--active" : ""}`}
+                onClick={() => onToggle(option)}
+              >
+                {prettifyLabel(option)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function FundingOpsDashboard({
@@ -90,6 +148,9 @@ export function FundingOpsDashboard({
     notificationMode: initialData.profile.notificationMode,
     notificationEmail: initialData.profile.notificationEmail,
     dailySummaryEnabled: initialData.profile.dailySummaryEnabled,
+    emailCategories: initialData.profile.emailCategories,
+    emailJurisdictions: initialData.profile.emailJurisdictions,
+    emailTags: initialData.profile.emailTags,
   });
 
   const filteredItems = useMemo(() => {
@@ -98,15 +159,28 @@ export function FundingOpsDashboard({
     return workspace.items.filter((item) => {
       const matchesQuery =
         !query ||
-        [item.title, item.summary, item.eligibility, item.category, item.jurisdiction, ...item.tags, ...item.keywords]
+        [
+          item.title,
+          item.summary,
+          item.eligibility,
+          item.category,
+          item.jurisdiction,
+          item.audience,
+          item.geography,
+          ...item.tags,
+          ...item.keywords,
+        ]
           .join(" ")
           .toLowerCase()
           .includes(query);
 
-      const matchesCategory = filters.category === "all" || item.category === filters.category;
+      const matchesCategory =
+        filters.categories.length === 0 || filters.categories.includes(item.category);
       const matchesJurisdiction =
-        filters.jurisdiction === "all" || item.jurisdiction === filters.jurisdiction;
-      const matchesTag = filters.tag === "all" || item.tags.includes(filters.tag);
+        filters.jurisdictions.length === 0 ||
+        filters.jurisdictions.includes(item.jurisdiction);
+      const matchesTag =
+        filters.tags.length === 0 || item.tags.some((tag) => filters.tags.includes(tag));
       const matchesRecommendation = !filters.onlyRecommended || item.relevanceScore >= 45;
 
       return (
@@ -124,6 +198,30 @@ export function FundingOpsDashboard({
     [workspace.notifications],
   );
 
+  const emailPreferenceSummary = useMemo(() => {
+    const parts = [];
+
+    if (workspace.profile.emailCategories.length > 0) {
+      parts.push(
+        `types: ${workspace.profile.emailCategories.map(prettifyLabel).join(", ")}`,
+      );
+    }
+
+    if (workspace.profile.emailJurisdictions.length > 0) {
+      parts.push(`regions: ${workspace.profile.emailJurisdictions.join(", ")}`);
+    }
+
+    if (workspace.profile.emailTags.length > 0) {
+      parts.push(`tags: ${workspace.profile.emailTags.join(", ")}`);
+    }
+
+    return parts.length > 0 ? parts.join(" | ") : "all relevant items that match the profile";
+  }, [
+    workspace.profile.emailCategories,
+    workspace.profile.emailJurisdictions,
+    workspace.profile.emailTags,
+  ]);
+
   async function handleRefresh() {
     setIsRefreshing(true);
     setMessage(null);
@@ -137,6 +235,12 @@ export function FundingOpsDashboard({
       }
 
       setWorkspace(payload.workspace);
+      setProfileDraft((current) => ({
+        ...current,
+        emailCategories: payload.workspace.profile.emailCategories,
+        emailJurisdictions: payload.workspace.profile.emailJurisdictions,
+        emailTags: payload.workspace.profile.emailTags,
+      }));
       setMessage("Official-source feed refreshed.");
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "Could not refresh feed.");
@@ -167,6 +271,9 @@ export function FundingOpsDashboard({
           notificationMode: profileDraft.notificationMode,
           notificationEmail: profileDraft.notificationEmail,
           dailySummaryEnabled: profileDraft.dailySummaryEnabled,
+          emailCategories: profileDraft.emailCategories,
+          emailJurisdictions: profileDraft.emailJurisdictions,
+          emailTags: profileDraft.emailTags,
         }),
       });
 
@@ -176,7 +283,21 @@ export function FundingOpsDashboard({
       }
 
       setWorkspace(payload.workspace);
-      setMessage("Company profile saved and recommendations updated.");
+      setProfileDraft({
+        companyName: payload.workspace.profile.companyName,
+        companySummary: payload.workspace.profile.companySummary,
+        geography: payload.workspace.profile.geography,
+        sectors: toCommaList(payload.workspace.profile.sectors),
+        assistanceTypes: toCommaList(payload.workspace.profile.assistanceTypes),
+        keywords: toCommaList(payload.workspace.profile.keywords),
+        notificationMode: payload.workspace.profile.notificationMode,
+        notificationEmail: payload.workspace.profile.notificationEmail,
+        dailySummaryEnabled: payload.workspace.profile.dailySummaryEnabled,
+        emailCategories: payload.workspace.profile.emailCategories,
+        emailJurisdictions: payload.workspace.profile.emailJurisdictions,
+        emailTags: payload.workspace.profile.emailTags,
+      });
+      setMessage("Company profile and email update preferences saved.");
     } catch (profileError) {
       setError(profileError instanceof Error ? profileError.message : "Could not save profile.");
     } finally {
@@ -191,9 +312,10 @@ export function FundingOpsDashboard({
         <section className="hero panel">
           <div className="hero-copy">
             <p className="eyebrow">Funding Ops Feed</p>
-            <h1>Official-source search, filtering, ranking, and notifications for Puerto Rico-focused funding work.</h1>
+            <h1>Search the funding landscape faster and only email the updates that matter.</h1>
             <p className="lede">
-              This workspace ingests the official source catalog, ranks source items against your company profile, and keeps a refreshable feed for grants, aid, jobs, incentives, and recovery notices.
+              Funding Ops now gives users a clearer way to search, narrow results, and control
+              which opportunity types should appear in their daily email digest.
             </p>
           </div>
           <div className="hero-links">
@@ -210,7 +332,7 @@ export function FundingOpsDashboard({
           <div className="stat-card"><span>Feed Items</span><strong>{workspace.metrics.totalItems}</strong></div>
           <div className="stat-card"><span>High Relevance</span><strong>{workspace.metrics.highlyRelevantItems}</strong></div>
           <div className="stat-card"><span>Notifications</span><strong>{workspace.metrics.totalNotifications}</strong></div>
-          <div className="stat-card"><span>Filtered Results</span><strong>{filteredItems.length}</strong></div>
+          <div className="stat-card"><span>Visible Results</span><strong>{filteredItems.length}</strong></div>
         </section>
 
         {workspace.lastIngestionRun ? (
@@ -221,10 +343,88 @@ export function FundingOpsDashboard({
         {message ? <p className="notice success">{message}</p> : null}
         {error ? <p className="notice error">{error}</p> : null}
 
+        <section className="panel search-panel" id="filters">
+          <div className="search-panel__header">
+            <div>
+              <p className="eyebrow">Search And Filters</p>
+              <h2>Filter by keyword, type, region, and tags without digging through every source.</h2>
+            </div>
+            <button
+              type="button"
+              className="secondary-link"
+              onClick={() => setFilters(initialFilters)}
+            >
+              Clear Filters
+            </button>
+          </div>
+
+          <div className="search-toolbar">
+            <label className="search-input">
+              <span>Keyword search</span>
+              <input
+                value={filters.query}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, query: event.target.value }))
+                }
+                placeholder="Search grants, jobs, housing, resilience, Puerto Rico, incentives"
+              />
+            </label>
+            <label className="checkbox-row compact">
+              <input
+                type="checkbox"
+                checked={filters.onlyRecommended}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    onlyRecommended: event.target.checked,
+                  }))
+                }
+              />
+              <span>Only show recommended matches</span>
+            </label>
+          </div>
+
+          <div className="filter-groups">
+            <SelectionGroup
+              label="Opportunity types"
+              options={workspace.filters.categories}
+              selected={filters.categories}
+              onToggle={(value) =>
+                setFilters((current) => ({
+                  ...current,
+                  categories: toggleSelection(current.categories, value),
+                }))
+              }
+            />
+            <SelectionGroup
+              label="Jurisdictions"
+              options={workspace.filters.jurisdictions}
+              selected={filters.jurisdictions}
+              onToggle={(value) =>
+                setFilters((current) => ({
+                  ...current,
+                  jurisdictions: toggleSelection(current.jurisdictions, value),
+                }))
+              }
+            />
+            <SelectionGroup
+              label="Tags"
+              options={workspace.filters.tags}
+              selected={filters.tags}
+              onToggle={(value) =>
+                setFilters((current) => ({
+                  ...current,
+                  tags: toggleSelection(current.tags, value),
+                }))
+              }
+            />
+          </div>
+        </section>
+
         <section className="content-grid">
           <section className="panel" id="profile">
             <p className="eyebrow">Company Profile</p>
-            <h2>Describe what the organization does and how notifications should be delivered.</h2>
+            <h2>Describe the organization so ranking and notifications stay relevant.</h2>
             <form className="form-grid" onSubmit={handleProfileSave}>
               <label><span>Company name</span><input value={profileDraft.companyName} onChange={(event) => setProfileDraft((current) => ({ ...current, companyName: event.target.value }))} /></label>
               <label><span>Geography</span><input value={profileDraft.geography} onChange={(event) => setProfileDraft((current) => ({ ...current, geography: event.target.value }))} /></label>
@@ -232,32 +432,67 @@ export function FundingOpsDashboard({
               <label><span>Sectors</span><input value={profileDraft.sectors} onChange={(event) => setProfileDraft((current) => ({ ...current, sectors: event.target.value }))} placeholder="small business, housing, resilience" /></label>
               <label><span>Assistance types</span><input value={profileDraft.assistanceTypes} onChange={(event) => setProfileDraft((current) => ({ ...current, assistanceTypes: event.target.value }))} placeholder="grants, jobs, incentives" /></label>
               <label className="full"><span>Tracked keywords</span><input value={profileDraft.keywords} onChange={(event) => setProfileDraft((current) => ({ ...current, keywords: event.target.value }))} placeholder="Puerto Rico, entrepreneurship, recovery" /></label>
-              <label><span>Notification mode</span><select value={profileDraft.notificationMode} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationMode: event.target.value }))}><option value="digest">digest</option><option value="instant">instant</option><option value="muted">muted</option></select></label>
-              <label><span>Daily summary email</span><input type="email" value={profileDraft.notificationEmail} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationEmail: event.target.value }))} placeholder="alerts@example.com" /></label>
-              <label className="checkbox-row"><input type="checkbox" checked={profileDraft.dailySummaryEnabled} onChange={(event) => setProfileDraft((current) => ({ ...current, dailySummaryEnabled: event.target.checked }))} /><span>Send daily summary email when enabled</span></label>
+
+              <div className="preference-card full">
+                <div className="preference-card__header">
+                  <div>
+                    <span>Email updates</span>
+                    <p>Choose exactly which result types should be included in the daily email summary.</p>
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <label><span>Notification mode</span><select value={profileDraft.notificationMode} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationMode: event.target.value }))}><option value="digest">digest</option><option value="instant">instant</option><option value="muted">muted</option></select></label>
+                  <label><span>Daily summary email</span><input type="email" value={profileDraft.notificationEmail} onChange={(event) => setProfileDraft((current) => ({ ...current, notificationEmail: event.target.value }))} placeholder="alerts@example.com" /></label>
+                  <label className="checkbox-row"><input type="checkbox" checked={profileDraft.dailySummaryEnabled} onChange={(event) => setProfileDraft((current) => ({ ...current, dailySummaryEnabled: event.target.checked }))} /><span>Send daily summary email</span></label>
+                </div>
+                <div className="filter-groups compact-gap">
+                  <SelectionGroup
+                    label="Email opportunity types"
+                    options={workspace.filters.categories}
+                    selected={profileDraft.emailCategories}
+                    onToggle={(value) =>
+                      setProfileDraft((current) => ({
+                        ...current,
+                        emailCategories: toggleSelection(current.emailCategories, value),
+                      }))
+                    }
+                  />
+                  <SelectionGroup
+                    label="Email jurisdictions"
+                    options={workspace.filters.jurisdictions}
+                    selected={profileDraft.emailJurisdictions}
+                    onToggle={(value) =>
+                      setProfileDraft((current) => ({
+                        ...current,
+                        emailJurisdictions: toggleSelection(current.emailJurisdictions, value),
+                      }))
+                    }
+                  />
+                  <SelectionGroup
+                    label="Email tags"
+                    options={workspace.filters.tags}
+                    selected={profileDraft.emailTags}
+                    onToggle={(value) =>
+                      setProfileDraft((current) => ({
+                        ...current,
+                        emailTags: toggleSelection(current.emailTags, value),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
               <button type="submit" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button>
             </form>
           </section>
 
-          <section className="panel" id="filters">
-            <p className="eyebrow">Search And Filters</p>
-            <h2>Filter the feed by keyword, type, jurisdiction, and tags.</h2>
-            <div className="form-grid">
-              <label className="full"><span>Keyword search</span><input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="grants, Puerto Rico, housing, jobs" /></label>
-              <label><span>Category</span><select value={filters.category} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">all</option>{workspace.filters.categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
-              <label><span>Jurisdiction</span><select value={filters.jurisdiction} onChange={(event) => setFilters((current) => ({ ...current, jurisdiction: event.target.value }))}><option value="all">all</option>{workspace.filters.jurisdictions.map((jurisdiction) => <option key={jurisdiction} value={jurisdiction}>{jurisdiction}</option>)}</select></label>
-              <label><span>Tag</span><select value={filters.tag} onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))}><option value="all">all</option>{workspace.filters.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
-              <label className="checkbox-row"><input type="checkbox" checked={filters.onlyRecommended} onChange={(event) => setFilters((current) => ({ ...current, onlyRecommended: event.target.checked }))} /><span>Only show relevance score 45+</span></label>
-            </div>
-          </section>
-
           <section className="panel" id="notifications">
             <p className="eyebrow">Notifications</p>
-            <h2>Recommended items generated from the current profile.</h2>
+            <h2>Users can now see what will be emailed before the digest goes out.</h2>
             <p className="lede">
               Daily summary email is {workspace.profile.dailySummaryEnabled ? "enabled" : "disabled"}.
               {workspace.profile.notificationEmail
-                ? ` Summary destination: ${workspace.profile.notificationEmail}.`
+                ? ` Destination: ${workspace.profile.notificationEmail}. Email filters: ${emailPreferenceSummary}.`
                 : " Add an email address in the profile section to receive summaries."}
             </p>
             <div className="list">
@@ -300,25 +535,43 @@ export function FundingOpsDashboard({
         </section>
 
         <section className="panel" id="feed">
-          <p className="eyebrow">Ranked Feed</p>
-          <h2>Relevance-ranked official-source items.</h2>
+          <div className="search-panel__header">
+            <div>
+              <p className="eyebrow">Ranked Feed</p>
+              <h2>Relevance-ranked official-source items with clearer scan-friendly details.</h2>
+            </div>
+            <div className="result-summary">
+              <span>{filteredItems.length} results</span>
+              <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
+            </div>
+          </div>
           <div className="list">
             {filteredItems.length === 0 ? (
               <div className="empty">No feed items match the current filters.</div>
             ) : (
               filteredItems.map((item) => (
-                <article className="list-item" key={item.id}>
+                <article className="list-item feed-card" key={item.id}>
                   <div className="list-header">
                     <strong>{item.title}</strong>
                     <span className="pill score-pill">{item.relevanceScore}</span>
+                  </div>
+                  <div className="meta-row">
+                    <span className="pill">{prettifyLabel(item.category)}</span>
+                    <span className="pill">{item.jurisdiction}</span>
+                    <span className="pill">{formatDateLabel(item.deadline)}</span>
                   </div>
                   <p>{item.summary}</p>
                   <p>Audience: {item.audience}</p>
                   <p>Eligibility: {item.eligibility}</p>
                   <p>Geography: {item.geography}</p>
-                  <p>Deadline: {formatDateLabel(item.deadline)}</p>
-                  <p>Tags: {item.tags.join(", ")}</p>
                   <p>Reasons: {item.reasons.length > 0 ? item.reasons.join(" | ") : "No strong profile signals yet."}</p>
+                  <div className="tag-row">
+                    {item.tags.map((tag) => (
+                      <span className="filter-chip filter-chip--static" key={`${item.id}-${tag}`}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                   <p><a href={item.url} target="_blank" rel="noreferrer">Open item source</a></p>
                 </article>
               ))

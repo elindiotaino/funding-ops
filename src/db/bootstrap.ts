@@ -1,5 +1,17 @@
 import { sqlite } from "@/db";
 
+function ensureCompanyProfileColumn(columnName: string, definition: string) {
+  const columns = sqlite.prepare("PRAGMA table_info(company_profile)").all() as Array<{
+    name: string;
+  }>;
+
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  sqlite.exec(`ALTER TABLE company_profile ADD COLUMN ${columnName} ${definition};`);
+}
+
 export function bootstrapDatabase() {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS funding_programs (
@@ -72,6 +84,9 @@ export function bootstrapDatabase() {
       notification_mode TEXT NOT NULL DEFAULT 'digest',
       notification_email TEXT,
       daily_summary_enabled INTEGER NOT NULL DEFAULT 0,
+      email_categories TEXT NOT NULL DEFAULT '[]',
+      email_jurisdictions TEXT NOT NULL DEFAULT '[]',
+      email_tags TEXT NOT NULL DEFAULT '[]',
       last_daily_summary_at TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -102,4 +117,8 @@ export function bootstrapDatabase() {
     CREATE INDEX IF NOT EXISTS idx_feed_items_source_key ON feed_items(source_key);
     CREATE INDEX IF NOT EXISTS idx_notifications_score ON notifications(relevance_score DESC);
   `);
+
+  ensureCompanyProfileColumn("email_categories", "TEXT NOT NULL DEFAULT '[]'");
+  ensureCompanyProfileColumn("email_jurisdictions", "TEXT NOT NULL DEFAULT '[]'");
+  ensureCompanyProfileColumn("email_tags", "TEXT NOT NULL DEFAULT '[]'");
 }

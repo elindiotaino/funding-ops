@@ -39,6 +39,9 @@ type CompanyProfileInput = {
   notificationMode: string;
   notificationEmail: string;
   dailySummaryEnabled: boolean;
+  emailCategories: string[];
+  emailJurisdictions: string[];
+  emailTags: string[];
 };
 
 type RawCompanyProfile = CompanyProfileInput & {
@@ -138,6 +141,9 @@ const defaultProfile: CompanyProfileInput = {
   notificationMode: "digest",
   notificationEmail: "",
   dailySummaryEnabled: false,
+  emailCategories: [],
+  emailJurisdictions: [],
+  emailTags: [],
 };
 
 function nowIso() {
@@ -512,6 +518,9 @@ function getProfile() {
         notification_mode as notificationMode,
         notification_email as notificationEmail,
         daily_summary_enabled as dailySummaryEnabled,
+        email_categories as emailCategories,
+        email_jurisdictions as emailJurisdictions,
+        email_tags as emailTags,
         last_daily_summary_at as lastDailySummaryAt,
         updated_at as updatedAt
       FROM company_profile
@@ -539,6 +548,9 @@ function getProfile() {
     notificationMode: String(row.notificationMode ?? "digest"),
     notificationEmail: String(row.notificationEmail ?? ""),
     dailySummaryEnabled: Boolean(Number(row.dailySummaryEnabled ?? 0)),
+    emailCategories: parseArray(String(row.emailCategories ?? "[]")),
+    emailJurisdictions: parseArray(String(row.emailJurisdictions ?? "[]")),
+    emailTags: parseArray(String(row.emailTags ?? "[]")),
     lastDailySummaryAt: row.lastDailySummaryAt ? String(row.lastDailySummaryAt) : null,
     updatedAt: String(row.updatedAt ?? nowIso()),
   } satisfies RawCompanyProfile;
@@ -739,6 +751,18 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
   };
 }
 
+function matchesEmailPreferences(item: RawFeedItem | ScoredItem, profile: RawCompanyProfile) {
+  const matchesCategories =
+    profile.emailCategories.length === 0 || profile.emailCategories.includes(item.category);
+  const matchesJurisdictions =
+    profile.emailJurisdictions.length === 0 ||
+    profile.emailJurisdictions.includes(item.jurisdiction);
+  const matchesTags =
+    profile.emailTags.length === 0 || item.tags.some((tag) => profile.emailTags.includes(tag));
+
+  return matchesCategories && matchesJurisdictions && matchesTags;
+}
+
 function syncSeedData(triggeredBy: string, notes?: string) {
   const currentTimestamp = nowIso();
   const upsertSource = sqlite.prepare(`
@@ -908,11 +932,14 @@ export function initializeFundingFeed() {
           geography,
           sectors,
           assistance_types,
-          keywords,
-          notification_mode,
-          notification_email,
-          daily_summary_enabled
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        keywords,
+        notification_mode,
+        notification_email,
+        daily_summary_enabled,
+        email_categories,
+        email_jurisdictions,
+        email_tags
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         1,
@@ -925,6 +952,9 @@ export function initializeFundingFeed() {
         defaultProfile.notificationMode,
         defaultProfile.notificationEmail,
         defaultProfile.dailySummaryEnabled ? 1 : 0,
+        stringifyArray(defaultProfile.emailCategories),
+        stringifyArray(defaultProfile.emailJurisdictions),
+        stringifyArray(defaultProfile.emailTags),
       );
   }
 
@@ -948,6 +978,9 @@ export function saveCompanyProfile(input: CompanyProfileInput) {
         notification_mode = ?,
         notification_email = ?,
         daily_summary_enabled = ?,
+        email_categories = ?,
+        email_jurisdictions = ?,
+        email_tags = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = 1
     `)
@@ -961,6 +994,9 @@ export function saveCompanyProfile(input: CompanyProfileInput) {
       input.notificationMode,
       input.notificationEmail,
       input.dailySummaryEnabled ? 1 : 0,
+      stringifyArray(input.emailCategories),
+      stringifyArray(input.emailJurisdictions),
+      stringifyArray(input.emailTags),
     );
 
   syncNotificationsForProfile(getProfile());
@@ -979,7 +1015,10 @@ function startOfUtcDay(value: string) {
 
 export function getDailySummaryEmailPayload() {
   const profile = getProfile();
-  const items = getFundingWorkspaceData().items.filter((item) => item.relevanceScore >= 55).slice(0, 5);
+  const items = getFundingWorkspaceData().items
+    .filter((item) => item.relevanceScore >= 55)
+    .filter((item) => matchesEmailPreferences(item, profile))
+    .slice(0, 5);
 
   if (!profile.dailySummaryEnabled) {
     return { shouldSend: false as const, reason: "Daily summary is disabled." };
@@ -994,7 +1033,7 @@ export function getDailySummaryEmailPayload() {
   }
 
   if (items.length === 0) {
-    return { shouldSend: false as const, reason: "No relevant items available for summary." };
+    return { shouldSend: false as const, reason: "No relevant items match the email update filters." };
   }
 
   if (

@@ -15,6 +15,9 @@ const profileSchema = z.object({
   notificationMode: z.enum(["digest", "instant", "muted"]),
   notificationEmail: z.string().trim().email().or(z.literal("")),
   dailySummaryEnabled: z.boolean(),
+  emailCategories: z.array(z.string().trim().min(1)).max(20),
+  emailJurisdictions: z.array(z.string().trim().min(1)).max(20),
+  emailTags: z.array(z.string().trim().min(1)).max(30),
 });
 
 export async function POST(request: Request) {
