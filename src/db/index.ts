@@ -8,15 +8,13 @@ import * as schema from "@/db/schema";
 
 function getCandidateDatabasePaths() {
   const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
-
-  if (configuredDatabaseUrl) {
-    return [path.resolve(process.cwd(), configuredDatabaseUrl)];
-  }
-
-  return [
-    path.resolve(process.cwd(), "./data/funding-ops.db"),
+  const candidates = [
+    configuredDatabaseUrl ? path.resolve(process.cwd(), configuredDatabaseUrl) : null,
     path.join(os.tmpdir(), "funding-ops.db"),
-  ];
+    path.resolve(process.cwd(), "./data/funding-ops.db"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return Array.from(new Set(candidates));
 }
 
 function openSqliteDatabase() {
@@ -34,8 +32,18 @@ function openSqliteDatabase() {
 }
 
 const sqlite = openSqliteDatabase();
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+
+try {
+  sqlite.pragma("journal_mode = WAL");
+} catch (error) {
+  console.warn("Could not enable WAL journal mode for Funding Ops database.", error);
+}
+
+try {
+  sqlite.pragma("foreign_keys = ON");
+} catch (error) {
+  console.warn("Could not enable foreign key support for Funding Ops database.", error);
+}
 
 export const db = drizzle(sqlite, { schema });
 export { sqlite };
