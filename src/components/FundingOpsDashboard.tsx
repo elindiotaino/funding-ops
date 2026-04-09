@@ -77,6 +77,10 @@ function formatDateLabel(value: string | null) {
   });
 }
 
+function formatMatchScore(score: number) {
+  return `${(score / 10).toFixed(1)}/10`;
+}
+
 function prettifyLabel(value: string) {
   return value
     .split(/[-_]/g)
@@ -538,41 +542,50 @@ export function FundingOpsDashboard({
           <div className="search-panel__header">
             <div>
               <p className="eyebrow">Ranked Feed</p>
-              <h2>Relevance-ranked official-source items with clearer scan-friendly details.</h2>
+              <h2>Minimal ranked matches from best to weakest fit for the active criteria.</h2>
             </div>
             <div className="result-summary">
               <span>{filteredItems.length} results</span>
               <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
             </div>
           </div>
-          <div className="list">
+          <div className="ranked-list">
             {filteredItems.length === 0 ? (
               <div className="empty">No feed items match the current filters.</div>
             ) : (
-              filteredItems.map((item) => (
-                <article className="list-item feed-card" key={item.id}>
-                  <div className="list-header">
-                    <strong>{item.title}</strong>
-                    <span className="pill score-pill">{item.relevanceScore}</span>
+              filteredItems.map((item, index) => (
+                <article className="ranked-item" key={item.id}>
+                  <div className="ranked-item__order">
+                    <span>{String(index + 1).padStart(2, "0")}</span>
                   </div>
-                  <div className="meta-row">
-                    <span className="pill">{prettifyLabel(item.category)}</span>
-                    <span className="pill">{item.jurisdiction}</span>
-                    <span className="pill">{formatDateLabel(item.deadline)}</span>
+                  <div className="ranked-item__body">
+                    <div className="ranked-item__header">
+                      <div>
+                        <strong>{item.title}</strong>
+                        <p className="ranked-item__summary">{item.summary}</p>
+                      </div>
+                      <div className="ranked-item__score">
+                        <span>Match</span>
+                        <strong>{formatMatchScore(item.relevanceScore)}</strong>
+                      </div>
+                    </div>
+                    <div className="ranked-item__meta">
+                      <span>{prettifyLabel(item.category)}</span>
+                      <span>{item.jurisdiction}</span>
+                      <span>{formatDateLabel(item.deadline)}</span>
+                    </div>
+                    <p className="ranked-item__reasons">
+                      {item.reasons.length > 0 ? item.reasons.join(" | ") : "No strong profile signals yet."}
+                    </p>
+                    <div className="tag-row">
+                      {item.tags.slice(0, 5).map((tag) => (
+                        <span className="filter-chip filter-chip--static" key={`${item.id}-${tag}`}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    <p><a href={item.url} target="_blank" rel="noreferrer">Open item source</a></p>
                   </div>
-                  <p>{item.summary}</p>
-                  <p>Audience: {item.audience}</p>
-                  <p>Eligibility: {item.eligibility}</p>
-                  <p>Geography: {item.geography}</p>
-                  <p>Reasons: {item.reasons.length > 0 ? item.reasons.join(" | ") : "No strong profile signals yet."}</p>
-                  <div className="tag-row">
-                    {item.tags.map((tag) => (
-                      <span className="filter-chip filter-chip--static" key={`${item.id}-${tag}`}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  <p><a href={item.url} target="_blank" rel="noreferrer">Open item source</a></p>
                 </article>
               ))
             )}
