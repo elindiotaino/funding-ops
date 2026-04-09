@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { bootstrapDatabase } from "@/db/bootstrap";
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
-import { sendDailySummaryEmail } from "@/lib/email";
 import {
   getDailySummaryEmailPayload,
   initializeFundingFeed,
@@ -36,6 +35,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ workspace, dailySummary: summary });
     }
 
+    const { sendDailySummaryEmail } = await import("@/lib/email");
     const emailResult = await sendDailySummaryEmail(summary.payload);
     if (emailResult.sent) {
       markDailySummarySent();
