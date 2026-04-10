@@ -50,3 +50,5 @@ export function getDashboardData() {
     urgentDeadlines,
   };
 }
+
+export type FundingDashboardData = ReturnType<typeof getDashboardData>;
