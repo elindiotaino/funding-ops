@@ -1,13 +1,17 @@
 "use client";
 
+import type { Route } from "next";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import type { FundingDashboardData } from "@/lib/queries";
+import { prettifyLabel } from "@/components/FundingOpsShared";
 import { formatDateLabel } from "@/components/FundingOpsShared";
 
 type ProgramsViewProps = {
   basePath: string;
   initialDashboard: FundingDashboardData;
+  initialStatusFilter?: string;
 };
 
 type ProgramStatus = "researching" | "active" | "submitted" | "awarded" | "archived";
@@ -45,7 +49,11 @@ const emptyDraft: ProgramDraft = {
 export function FundingOpsProgramsView({
   basePath,
   initialDashboard,
+  initialStatusFilter,
 }: ProgramsViewProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [programs, setPrograms] = useState(initialDashboard.programs);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,15 +61,37 @@ export function FundingOpsProgramsView({
   const [draft, setDraft] = useState<ProgramDraft>(emptyDraft);
   const [pendingStatusById, setPendingStatusById] = useState<Record<number, ProgramStatus>>({});
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const activeStatusFilter = programStatuses.includes(initialStatusFilter as ProgramStatus)
+    ? (initialStatusFilter as ProgramStatus)
+    : "all";
+
+  const filteredPrograms = useMemo(
+    () =>
+      activeStatusFilter === "all"
+        ? programs
+        : programs.filter((program) => program.status === activeStatusFilter),
+    [activeStatusFilter, programs],
+  );
 
   const groupedPrograms = useMemo(
     () =>
       programStatuses.map((status) => ({
         status,
-        items: programs.filter((program) => program.status === status),
+        items: filteredPrograms.filter((program) => program.status === status),
       })),
-    [programs],
+    [filteredPrograms],
   );
+
+  function setStatusFilter(status: ProgramStatus | "all") {
+    const params = new URLSearchParams(searchParams.toString());
+    if (status === "all") {
+      params.delete("status");
+    } else {
+      params.set("status", status);
+    }
+    const query = params.toString();
+    router.replace((query ? `${pathname}?${query}` : pathname) as Route);
+  }
 
   async function handleCreateProgram(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -237,11 +267,30 @@ export function FundingOpsProgramsView({
         <section className="panel">
           <p className="eyebrow">Pipeline</p>
           <h2>Review the tracked program set by status.</h2>
+          <div className="chip-grid">
+            <button
+              type="button"
+              className={`filter-chip ${activeStatusFilter === "all" ? "filter-chip--active" : ""}`}
+              onClick={() => setStatusFilter("all")}
+            >
+              All
+            </button>
+            {programStatuses.map((status) => (
+              <button
+                key={status}
+                type="button"
+                className={`filter-chip ${activeStatusFilter === status ? "filter-chip--active" : ""}`}
+                onClick={() => setStatusFilter(status)}
+              >
+                {prettifyLabel(status)}
+              </button>
+            ))}
+          </div>
           <div className="kanban-grid">
             {groupedPrograms.map((group) => (
               <section className="kanban-column" key={group.status}>
                 <div className="kanban-column__header">
-                  <strong>{group.status}</strong>
+                  <strong>{prettifyLabel(group.status)}</strong>
                   <span className="pill">{group.items.length}</span>
                 </div>
                 <div className="list">

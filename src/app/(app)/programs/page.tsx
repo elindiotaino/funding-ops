@@ -4,8 +4,13 @@ import { getFundingAppPageData } from "@/lib/funding-app";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProgramsPage() {
+export default async function ProgramsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
   const data = await getFundingAppPageData();
+  const params = await searchParams;
 
   return (
     <>
@@ -15,7 +20,11 @@ export default async function ProgramsPage() {
         description="Programs become the working set for opportunities the team is actively qualifying, submitting, or closing out."
         status={`${data.dashboard.metrics.totalPrograms} tracked programs in the current database`}
       />
-      <FundingOpsProgramsView basePath={data.basePath} initialDashboard={data.dashboard} />
+      <FundingOpsProgramsView
+        basePath={data.basePath}
+        initialDashboard={data.dashboard}
+        initialStatusFilter={params.status}
+      />
     </>
   );
 }

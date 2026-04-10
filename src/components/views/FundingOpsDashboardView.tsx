@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { useMemo, useState } from "react";
 
 import type { FundingWorkspaceData } from "@/lib/feed";
@@ -201,25 +202,25 @@ export function FundingOpsDashboardView({
           <div className="section-heading">
             <div>
               <p className="eyebrow">Program Pipeline</p>
-              <h2>Tracked application work will move into its own page in Phase 2.</h2>
+              <h2>Tracked application work now has its own page, with dashboard links into key lanes.</h2>
             </div>
-            <Link className="secondary-link" href="/programs">
+            <Link className="secondary-link" href={"/programs" as Route}>
               Programs
             </Link>
           </div>
           <div className="mini-stat-grid">
-            <div className="stat-card stat-card--compact">
+            <Link className="stat-card stat-card--compact stat-card--link" href={"/programs?status=active" as Route}>
               <span>Active</span>
               <strong>{initialDashboard.metrics.activePrograms}</strong>
-            </div>
-            <div className="stat-card stat-card--compact">
+            </Link>
+            <Link className="stat-card stat-card--compact stat-card--link" href={"/programs?status=submitted" as Route}>
               <span>Submitted</span>
               <strong>{initialDashboard.metrics.submittedPrograms}</strong>
-            </div>
-            <div className="stat-card stat-card--compact">
+            </Link>
+            <Link className="stat-card stat-card--compact stat-card--link" href={"/programs?status=awarded" as Route}>
               <span>Awarded</span>
               <strong>{initialDashboard.metrics.awardedPrograms}</strong>
-            </div>
+            </Link>
           </div>
           <div className="list">
             {initialDashboard.urgentDeadlines.length === 0 ? (
@@ -243,15 +244,15 @@ export function FundingOpsDashboardView({
           <div className="section-heading">
             <div>
               <p className="eyebrow">Tasks</p>
-              <h2>Execution work becomes its own operational surface next.</h2>
+              <h2>Execution work opens into filtered task views from the dashboard.</h2>
             </div>
-            <Link className="secondary-link" href="/tasks">
+            <Link className="secondary-link" href={"/tasks" as Route}>
               Tasks
             </Link>
           </div>
           <div className="list">
             {initialDashboard.tasks.length === 0 ? (
-              <div className="empty">No tasks yet. Task workflow arrives in Phase 2.</div>
+              <div className="empty">No tasks yet.</div>
             ) : (
               initialDashboard.tasks.slice(0, 5).map((task) => (
                 <article className="list-item" key={task.id}>
@@ -264,6 +265,34 @@ export function FundingOpsDashboardView({
                 </article>
               ))
             )}
+          </div>
+          <div className="mini-stat-grid">
+            <Link className="stat-card stat-card--compact stat-card--link" href={"/tasks?status=pending" as Route}>
+              <span>Pending</span>
+              <strong>{initialDashboard.tasks.filter((task) => task.status === "pending").length}</strong>
+            </Link>
+            <Link className="stat-card stat-card--compact stat-card--link" href={"/tasks?status=in-progress" as Route}>
+              <span>In Progress</span>
+              <strong>{initialDashboard.tasks.filter((task) => task.status === "in-progress").length}</strong>
+            </Link>
+            <Link className="stat-card stat-card--compact stat-card--link" href={"/tasks?due=soon" as Route}>
+              <span>Due Soon</span>
+              <strong>
+                {
+                  initialDashboard.tasks.filter((task) => {
+                    if (!task.dueDate || task.status === "complete") {
+                      return false;
+                    }
+
+                    const now = new Date();
+                    const dueDate = new Date(task.dueDate);
+                    const diff = dueDate.getTime() - now.getTime();
+                    const days = diff / (1000 * 60 * 60 * 24);
+                    return days >= 0 && days <= 7;
+                  }).length
+                }
+              </strong>
+            </Link>
           </div>
         </section>
       </section>

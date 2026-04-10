@@ -1,13 +1,17 @@
 "use client";
 
+import type { Route } from "next";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import type { FundingDashboardData } from "@/lib/queries";
-import { formatDateLabel } from "@/components/FundingOpsShared";
+import { formatDateLabel, prettifyLabel } from "@/components/FundingOpsShared";
 
 type TasksViewProps = {
   basePath: string;
   initialDashboard: FundingDashboardData;
+  initialDueFilter?: string;
+  initialStatusFilter?: string;
 };
 
 type TaskStatus = "pending" | "in-progress" | "complete";
@@ -30,7 +34,15 @@ const emptyDraft: TaskDraft = {
   notes: "",
 };
 
-export function FundingOpsTasksView({ basePath, initialDashboard }: TasksViewProps) {
+export function FundingOpsTasksView({
+  basePath,
+  initialDashboard,
+  initialDueFilter,
+  initialStatusFilter,
+}: TasksViewProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState(initialDashboard.tasks);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,15 +50,78 @@ export function FundingOpsTasksView({ basePath, initialDashboard }: TasksViewPro
   const [draft, setDraft] = useState<TaskDraft>(emptyDraft);
   const [pendingStatusById, setPendingStatusById] = useState<Record<number, TaskStatus>>({});
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const activeStatusFilter = taskStatuses.includes(initialStatusFilter as TaskStatus)
+    ? (initialStatusFilter as TaskStatus)
+    : "all";
+  const activeDueFilter =
+    initialDueFilter === "soon" || initialDueFilter === "overdue" ? initialDueFilter : "all";
+
+  const filteredTasks = useMemo(() => {
+    const now = new Date();
+
+    return tasks.filter((task) => {
+      const statusMatches =
+        activeStatusFilter === "all" || task.status === activeStatusFilter;
+
+      if (!statusMatches) {
+        return false;
+      }
+
+      if (activeDueFilter === "all") {
+        return true;
+      }
+
+      if (!task.dueDate || task.status === "complete") {
+        return false;
+      }
+
+      const dueDate = new Date(task.dueDate);
+      if (Number.isNaN(dueDate.getTime())) {
+        return false;
+      }
+
+      const diffDays = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (activeDueFilter === "overdue") {
+        return diffDays < 0;
+      }
+
+      return diffDays >= 0 && diffDays <= 7;
+    });
+  }, [activeDueFilter, activeStatusFilter, tasks]);
 
   const groupedTasks = useMemo(
     () =>
       taskStatuses.map((status) => ({
         status,
-        items: tasks.filter((task) => task.status === status),
+        items: filteredTasks.filter((task) => task.status === status),
       })),
-    [tasks],
+    [filteredTasks],
   );
+
+  function setFilters({
+    status = activeStatusFilter,
+    due = activeDueFilter,
+  }: {
+    status?: TaskStatus | "all";
+    due?: "all" | "soon" | "overdue";
+  }) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (status === "all") {
+      params.delete("status");
+    } else {
+      params.set("status", status);
+    }
+
+    if (due === "all") {
+      params.delete("due");
+    } else {
+      params.set("due", due);
+    }
+
+    const query = params.toString();
+    router.replace((query ? `${pathname}?${query}` : pathname) as Route);
+  }
 
   async function handleCreateTask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -198,11 +273,55 @@ export function FundingOpsTasksView({ basePath, initialDashboard }: TasksViewPro
         <section className="panel">
           <p className="eyebrow">Execution Board</p>
           <h2>Keep the active work visible by status.</h2>
+          <div className="filter-groups compact-gap">
+            <div className="chip-grid">
+              <button
+                type="button"
+                className={`filter-chip ${activeStatusFilter === "all" ? "filter-chip--active" : ""}`}
+                onClick={() => setFilters({ status: "all" })}
+              >
+                All Statuses
+              </button>
+              {taskStatuses.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  className={`filter-chip ${activeStatusFilter === status ? "filter-chip--active" : ""}`}
+                  onClick={() => setFilters({ status })}
+                >
+                  {prettifyLabel(status)}
+                </button>
+              ))}
+            </div>
+            <div className="chip-grid">
+              <button
+                type="button"
+                className={`filter-chip ${activeDueFilter === "all" ? "filter-chip--active" : ""}`}
+                onClick={() => setFilters({ due: "all" })}
+              >
+                All Due Dates
+              </button>
+              <button
+                type="button"
+                className={`filter-chip ${activeDueFilter === "soon" ? "filter-chip--active" : ""}`}
+                onClick={() => setFilters({ due: "soon" })}
+              >
+                Due Soon
+              </button>
+              <button
+                type="button"
+                className={`filter-chip ${activeDueFilter === "overdue" ? "filter-chip--active" : ""}`}
+                onClick={() => setFilters({ due: "overdue" })}
+              >
+                Overdue
+              </button>
+            </div>
+          </div>
           <div className="kanban-grid kanban-grid--tasks">
             {groupedTasks.map((group) => (
               <section className="kanban-column" key={group.status}>
                 <div className="kanban-column__header">
-                  <strong>{group.status}</strong>
+                  <strong>{prettifyLabel(group.status)}</strong>
                   <span className="pill">{group.items.length}</span>
                 </div>
                 <div className="list">

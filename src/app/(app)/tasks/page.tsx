@@ -4,8 +4,13 @@ import { getFundingAppPageData } from "@/lib/funding-app";
 
 export const dynamic = "force-dynamic";
 
-export default async function TasksPage() {
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; due?: string }>;
+}) {
   const data = await getFundingAppPageData();
+  const params = await searchParams;
 
   return (
     <>
@@ -15,7 +20,12 @@ export default async function TasksPage() {
         description="Tasks now have a dedicated page for capture, status changes, and due-date visibility."
         status={`${data.dashboard.metrics.pendingTasks} open tasks in the current database`}
       />
-      <FundingOpsTasksView basePath={data.basePath} initialDashboard={data.dashboard} />
+      <FundingOpsTasksView
+        basePath={data.basePath}
+        initialDashboard={data.dashboard}
+        initialDueFilter={params.due}
+        initialStatusFilter={params.status}
+      />
     </>
   );
 }
