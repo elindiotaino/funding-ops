@@ -282,6 +282,10 @@ button:hover {
   grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
 }
 
+.panel--full {
+  grid-column: 1 / -1;
+}
+
 .stat-card {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -635,6 +639,17 @@ button:hover {
   grid-column: 1 / -1;
 }
 
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.form-actions button {
+  min-width: 180px;
+}
+
 .checkbox-row {
   grid-column: 1 / -1;
   display: flex !important;
@@ -837,6 +852,19 @@ textarea::placeholder {
 
   .form-grid label.full {
     grid-column: auto;
+  }
+
+  .panel--full {
+    grid-column: auto;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+  }
+
+  .form-actions button {
+    width: 100%;
+    min-width: 0;
   }
 
   .list-header {

@@ -124,7 +124,7 @@ export function FundingOpsSettingsView({
       <WorkspaceNotices error={error} message={message} workspace={workspace} />
 
       <section className="content-grid">
-        <section className="panel">
+        <section className="panel panel--full">
           <p className="eyebrow">Company Profile</p>
           <h2>Describe the organization so ranking and notifications stay relevant.</h2>
           <form className="form-grid" onSubmit={handleProfileSave}>
@@ -282,9 +282,11 @@ export function FundingOpsSettingsView({
               </div>
             </div>
 
-            <button type="submit" disabled={isSavingProfile}>
-              {isSavingProfile ? "Saving..." : "Save Profile"}
-            </button>
+            <div className="form-actions full">
+              <button type="submit" disabled={isSavingProfile}>
+                {isSavingProfile ? "Saving..." : "Save Profile"}
+              </button>
+            </div>
           </form>
         </section>
 
