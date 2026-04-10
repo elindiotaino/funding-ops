@@ -29,8 +29,8 @@ export async function GET(request: Request) {
     bootstrapDatabase();
     initializeFundingFeed();
 
-    const workspace = refreshFundingFeed("cron");
-    const summary = getDailySummaryEmailPayload();
+    const workspace = await refreshFundingFeed("cron");
+    const summary = await getDailySummaryEmailPayload();
 
     if (!summary.shouldSend) {
       return NextResponse.json({ workspace, dailySummary: summary });
@@ -73,7 +73,7 @@ export async function POST() {
       return access.response;
     }
 
-    const workspace = refreshFundingFeed("manual");
+    const workspace = await refreshFundingFeed("manual");
     return NextResponse.json({ workspace });
   } catch (error) {
     console.error("Funding Ops manual refresh failed:", error);

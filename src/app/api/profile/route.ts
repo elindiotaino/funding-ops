@@ -37,6 +37,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const workspace = saveCompanyProfile(payload.data);
+  const workspace = await saveCompanyProfile(payload.data);
   return NextResponse.json({ workspace });
 }

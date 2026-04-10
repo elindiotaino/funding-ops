@@ -36,7 +36,7 @@ export async function getFundingAppPageData() {
     appUrl,
     basePath,
     hubUrl,
-    workspace: getFundingWorkspaceData(),
+    workspace: await getFundingWorkspaceData(),
     dashboard: getDashboardData(),
   };
 }

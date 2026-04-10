@@ -1,4 +1,6 @@
 import { sqlite } from "@/db";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasSupabaseServiceRoleEnv } from "@/lib/supabase/env";
 
 type SourceSeed = {
   key: string;
@@ -51,7 +53,7 @@ type RawCompanyProfile = CompanyProfileInput & {
 };
 
 type RawFeedItem = {
-  id: number;
+  id: number | string;
   itemKey: string;
   sourceKey: string;
   title: string;
@@ -72,7 +74,7 @@ type RawFeedItem = {
 };
 
 type RawSource = {
-  id: number;
+  id: number | string;
   sourceKey: string;
   name: string;
   url: string;
@@ -85,7 +87,7 @@ type RawSource = {
 };
 
 type RawNotification = {
-  id: number;
+  id: number | string;
   itemKey: string;
   title: string;
   message: string;
@@ -96,7 +98,7 @@ type RawNotification = {
 };
 
 type RawIngestionRun = {
-  id: number;
+  id: number | string;
   status: string;
   triggeredBy: string;
   notes: string | null;
@@ -150,13 +152,19 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function parseArray(value: string | null | undefined) {
+function parseArray(value: unknown) {
   if (!value) {
     return [] as string[];
   }
 
+  if (Array.isArray(value)) {
+    return value.filter(
+      (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+    );
+  }
+
   try {
-    const parsed = JSON.parse(value);
+    const parsed = JSON.parse(String(value));
     return Array.isArray(parsed)
       ? parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
       : [];
@@ -589,6 +597,102 @@ function getSources() {
   })) satisfies RawSource[];
 }
 
+async function getSupabaseWorkspaceData() {
+  if (!hasSupabaseServiceRoleEnv()) {
+    return null;
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  const [sourcesResult, itemsResult, ingestionRunsResult] = await Promise.all([
+    supabase.from("official_sources").select(
+      "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
+    ),
+    supabase.from("feed_items").select(
+      "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at",
+    ),
+    supabase
+      .from("ingestion_runs")
+      .select(
+        "id, status, triggered_by, notes, sources_attempted, sources_succeeded, items_upserted, started_at, completed_at",
+      )
+      .order("started_at", { ascending: false })
+      .limit(1),
+  ]);
+
+  if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
+    console.warn("Falling back to SQLite feed data because Supabase feed read failed.", {
+      sourcesError: sourcesResult.error?.message,
+      itemsError: itemsResult.error?.message,
+      ingestionRunsError: ingestionRunsResult.error?.message,
+    });
+    return null;
+  }
+
+  const remoteSources = sourcesResult.data ?? [];
+  const remoteItems = itemsResult.data ?? [];
+
+  if (remoteItems.length === 0) {
+    return null;
+  }
+
+  const sourceSeedMap = new Map(sourceSeeds.map((source) => [source.key, source]));
+  const sourceIdToKey = new Map(remoteSources.map((source) => [source.id, source.source_key]));
+
+  const sources = remoteSources.map((source) => {
+    const seed = sourceSeedMap.get(source.source_key);
+
+    return {
+      id: source.id,
+      sourceKey: source.source_key,
+      name: source.name,
+      url: source.base_url,
+      jurisdiction: source.jurisdiction,
+      interfaceType: source.interface_type,
+      programTypes: seed?.programTypes ?? [],
+      updateCadence: seed?.updateCadence ?? source.default_cadence,
+      summary: seed?.summary ?? `${source.name} official source.`,
+      lastSyncedAt: source.last_success_at ?? source.last_synced_at ?? null,
+    } satisfies RawSource;
+  });
+
+  const items = remoteItems.map((item) => ({
+    id: item.id,
+    itemKey: item.canonical_key,
+    sourceKey: sourceIdToKey.get(item.source_id) ?? "unknown-source",
+    title: item.title,
+    category: item.category,
+    jurisdiction: item.jurisdiction,
+    audience: item.audience ?? "",
+    summary: item.summary ?? "",
+    eligibility: item.eligibility ?? "",
+    amount: item.amount ?? null,
+    deadline: item.deadline ?? null,
+    geography: item.geography ?? "",
+    status: item.status,
+    url: item.source_url,
+    keywords: parseArray(item.keywords),
+    tags: parseArray(item.tags),
+    updatedAt: item.updated_at ?? nowIso(),
+    createdAt: item.created_at ?? nowIso(),
+  })) satisfies RawFeedItem[];
+
+  const latestRun = ingestionRunsResult.data?.[0];
+  const lastIngestionRun = latestRun
+    ? ({
+        id: latestRun.id,
+        status: latestRun.status,
+        triggeredBy: latestRun.triggered_by,
+        notes: latestRun.notes ?? null,
+        sourcesUpserted: latestRun.sources_succeeded ?? latestRun.sources_attempted ?? 0,
+        itemsUpserted: latestRun.items_upserted ?? 0,
+        createdAt: latestRun.completed_at ?? latestRun.started_at ?? nowIso(),
+      } satisfies RawIngestionRun)
+    : null;
+
+  return { items, lastIngestionRun, sources };
+}
+
 function getFeedItems() {
   const rows = sqlite
     .prepare(`
@@ -698,6 +802,22 @@ function getLastIngestionRun() {
     itemsUpserted: Number(row.itemsUpserted ?? 0),
     createdAt: String(row.createdAt ?? nowIso()),
   } satisfies RawIngestionRun;
+}
+
+function buildNotifications(items: ScoredItem[], profile: RawCompanyProfile) {
+  return items
+    .filter((item) => item.relevanceScore >= 45)
+    .slice(0, 12)
+    .map((item, index) => ({
+      id: item.itemKey || `${index + 1}`,
+      itemKey: item.itemKey,
+      title: item.title,
+      message: `${item.title} aligns with ${profile.companyName || "your tracked profile"} and is worth reviewing in the feed.`,
+      relevanceScore: item.relevanceScore,
+      reasons: item.reasons,
+      createdAt: item.updatedAt,
+      readAt: null,
+    })) satisfies RawNotification[];
 }
 
 function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
@@ -964,7 +1084,7 @@ export function initializeFundingFeed() {
   }
 }
 
-export function saveCompanyProfile(input: CompanyProfileInput) {
+export async function saveCompanyProfile(input: CompanyProfileInput) {
   sqlite
     .prepare(`
       UPDATE company_profile
@@ -1003,7 +1123,7 @@ export function saveCompanyProfile(input: CompanyProfileInput) {
   return getFundingWorkspaceData();
 }
 
-export function refreshFundingFeed(triggeredBy: string) {
+export async function refreshFundingFeed(triggeredBy: string) {
   syncSeedData(triggeredBy, "Manual or scheduled official-source refresh");
   syncNotificationsForProfile(getProfile());
   return getFundingWorkspaceData();
@@ -1013,9 +1133,9 @@ function startOfUtcDay(value: string) {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`).getTime();
 }
 
-export function getDailySummaryEmailPayload() {
+export async function getDailySummaryEmailPayload() {
   const profile = getProfile();
-  const items = getFundingWorkspaceData().items
+  const items = (await getFundingWorkspaceData()).items
     .filter((item) => item.relevanceScore >= 55)
     .filter((item) => matchesEmailPreferences(item, profile))
     .slice(0, 5);
@@ -1073,11 +1193,12 @@ export function markDailySummarySent() {
     .run();
 }
 
-export function getFundingWorkspaceData() {
+export async function getFundingWorkspaceData() {
   const profile = getProfile();
-  const sources = getSources();
-  const notifications = getNotifications();
-  const items = getFeedItems()
+  const remoteWorkspace = await getSupabaseWorkspaceData();
+  const sources = remoteWorkspace?.sources ?? getSources();
+  const baseItems = remoteWorkspace?.items ?? getFeedItems();
+  const items = baseItems
     .map((item) => {
       const scored = scoreItem(item, profile);
       return {
@@ -1087,6 +1208,7 @@ export function getFundingWorkspaceData() {
       };
     })
     .sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
+  const notifications = buildNotifications(items, profile);
 
   const allTags = Array.from(new Set(items.flatMap((item) => item.tags))).sort((a, b) =>
     a.localeCompare(b),
@@ -1097,7 +1219,7 @@ export function getFundingWorkspaceData() {
   const jurisdictions = Array.from(new Set(items.map((item) => item.jurisdiction))).sort((a, b) =>
     a.localeCompare(b),
   );
-  const lastIngestionRun = getLastIngestionRun();
+  const lastIngestionRun = remoteWorkspace?.lastIngestionRun ?? getLastIngestionRun();
 
   return {
     sources,
