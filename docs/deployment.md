@@ -5,6 +5,7 @@
 - `hub.joche.dev`: dashboard homepage that lists tools
 - `funding-ops.joche.dev`: primary production domain for this repo
 - future domains like `funding.stimulo.ai`: aliases attached to the same Vercel project
+- Windows working copy and Docker storage should live at `D:\Projects\funding-ops`
 
 ## Vercel model
 
@@ -45,3 +46,36 @@ Split a client onto a separate Vercel project only if you need:
 ```
 
 The hub can render cards from that metadata and open each tool in its own app domain.
+
+## Docker ingest deployment
+
+Issue `#6` adds a separate ingestion service for scheduled feed automation.
+
+Recommended split:
+
+- Vercel hosts the Next.js app
+- Docker hosts `funding-ops-ingest`
+- Supabase stores the feed, run history, and item details
+
+For Windows hosts, use:
+
+- repo root: `D:\Projects\funding-ops`
+- runtime storage: `D:\Projects\funding-ops\runtime\data`
+
+Start the service with:
+
+```powershell
+$env:FUNDING_OPS_STORAGE_ROOT="D:/Projects/funding-ops/runtime/data"
+docker compose up --build funding-ops-ingest
+```
+
+Scheduler options:
+
+- Windows Task Scheduler calling `POST /jobs/daily-refresh`
+- host cron on a Linux Docker machine
+- an external trusted scheduler calling the same internal endpoint
+
+The service contract and schema live in:
+
+- `docs/docker-supabase-architecture.md`
+- `docs/supabase-feed-schema.sql`

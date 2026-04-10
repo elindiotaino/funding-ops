@@ -4,6 +4,13 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 .env.local
+.env.docker
+.env.production.local
 dist
+.next-start.err.log
+.next-start.out.log
+.standalone.err.log
+.standalone.out.log
 
 .vercel
+runtime/

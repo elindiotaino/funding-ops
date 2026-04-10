@@ -4,6 +4,9 @@
 `client-acquisition-hub`. It is intended to become one tool in a broader tool
 dashboard hosted at `hub.joche.dev`.
 
+The intended Windows repo location is `D:\Projects\funding-ops` so Docker
+runtime data and project storage stay off the system drive.
+
 ## What this repo owns
 
 - funding program tracking
@@ -25,8 +28,12 @@ The current app now includes:
 - filters for keyword, category, jurisdiction, and tags
 - notification generation for relevant feed items
 - manual refresh plus a daily cron entry for feed refresh
-- local SQLite persistence
+- local SQLite persistence for legacy/local workflows
 - shared Supabase-backed auth and tool authorization via `hub.joche.dev`
+
+Issue `#6` introduces the next architecture step: a Dockerized ingestion service
+that writes the daily feed into Supabase while the Next.js app becomes the
+authenticated UI layer.
 
 ## Hub model
 
@@ -60,6 +67,73 @@ Only split into multiple Vercel projects if one of these becomes true:
 3. Start the app with `npm.cmd run dev`
 
 The database is stored at `data/funding-ops.db`.
+
+## Docker ingestion architecture
+
+New files added for issue `#6`:
+
+- `docker-compose.yml`
+- `docker/ingest/`
+- `docs/docker-supabase-architecture.md`
+- `docs/supabase-feed-schema.sql`
+- `docs/supabase-migration-workflow.md`
+- `docs/docker-local-operations.md`
+- `supabase/migrations/`
+
+The Docker service is designed to:
+
+- run daily source automations
+- normalize source data
+- write canonical feed data into Supabase
+- support future on-demand item-detail refresh
+
+Current live-ingestion status:
+
+- `grants-gov`: live adapter implemented with the public `search2` endpoint
+- `simpler-grants`: adapter implemented when `SIMPLER_GRANTS_API_KEY` is configured
+- `sam-assistance`: adapter implemented when `SAM_API_KEY` is configured
+- `usaspending`: live award-intelligence adapter implemented with the public advanced award search API
+- `openfema`: live adapter implemented with the public DisasterDeclarationsSummaries v2 dataset
+- `usajobs`: adapter implemented when `USAJOBS_API_KEY` and `USAJOBS_API_EMAIL` are configured
+- remaining sources are explicitly skipped until their adapters are implemented
+
+Use `FUNDING_OPS_STORAGE_ROOT` to keep persistent Docker data on `D:`:
+
+```powershell
+$env:FUNDING_OPS_STORAGE_ROOT="D:/Projects/funding-ops/runtime/data"
+docker compose up --build funding-ops-ingest
+```
+
+Read the full design in `docs/docker-supabase-architecture.md`.
+Use `docs/docker-local-operations.md` for the day-to-day local Docker workflow.
+
+## Supabase migration workflow
+
+Issue `#7` adds a repo-native Supabase CLI workflow for the feed schema.
+
+Key commands:
+
+```powershell
+npm run supabase:migration:new -- funding_ops_change_name
+npm run supabase:db:push
+npm run supabase:verify-feed-schema
+```
+
+The current remote apply target is the `joche.dev` Supabase project. See
+`docs/supabase-migration-workflow.md` for the link/apply/verify steps and the
+remote apply workflow.
+
+## Local Docker operations
+
+From `D:\Projects\funding-ops`:
+
+```powershell
+npm run ingest:start
+npm run ingest:test
+npm run ingest:stop
+```
+
+These scripts are the default local operational path for `funding-ops-ingest`.
 
 You must also provide the shared Supabase env vars used by the hub, because this tool now enforces authenticated access and checks whether the current user has the `funding-ops` grant directly or through an organization.
 
