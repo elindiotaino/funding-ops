@@ -12,6 +12,7 @@ import {
   WorkspaceNotices,
   prettifyLabel,
 } from "@/components/FundingOpsShared";
+import { formatNaicsLabel, NAICS_OPTIONS } from "@/lib/naics";
 
 type SettingsViewProps = {
   basePath: string;
@@ -30,6 +31,7 @@ export function FundingOpsSettingsView({
     companyName: initialWorkspace.profile.companyName,
     companySummary: initialWorkspace.profile.companySummary,
     geography: initialWorkspace.profile.geography,
+    naicsCodes: initialWorkspace.profile.naicsCodes,
     sectors: toCommaList(initialWorkspace.profile.sectors),
     assistanceTypes: toCommaList(initialWorkspace.profile.assistanceTypes),
     keywords: toCommaList(initialWorkspace.profile.keywords),
@@ -79,6 +81,7 @@ export function FundingOpsSettingsView({
           companyName: profileDraft.companyName,
           companySummary: profileDraft.companySummary,
           geography: profileDraft.geography,
+          naicsCodes: profileDraft.naicsCodes,
           sectors: toArray(profileDraft.sectors),
           assistanceTypes: toArray(profileDraft.assistanceTypes),
           keywords: toArray(profileDraft.keywords),
@@ -101,6 +104,7 @@ export function FundingOpsSettingsView({
         companyName: payload.workspace.profile.companyName,
         companySummary: payload.workspace.profile.companySummary,
         geography: payload.workspace.profile.geography,
+        naicsCodes: payload.workspace.profile.naicsCodes,
         sectors: toCommaList(payload.workspace.profile.sectors),
         assistanceTypes: toCommaList(payload.workspace.profile.assistanceTypes),
         keywords: toCommaList(payload.workspace.profile.keywords),
@@ -192,6 +196,22 @@ export function FundingOpsSettingsView({
                 placeholder="Puerto Rico, entrepreneurship, recovery"
               />
             </label>
+
+            <div className="full">
+              <SelectionGroup
+                label="Primary NAICS filter"
+                options={NAICS_OPTIONS.map((option) => option.code)}
+                selected={profileDraft.naicsCodes}
+                onToggle={(value) =>
+                  setProfileDraft((current) => ({
+                    ...current,
+                    naicsCodes: toggleSelection(current.naicsCodes, value),
+                  }))
+                }
+                emptyCopy="No NAICS options available."
+                formatOptionLabel={formatNaicsLabel}
+              />
+            </div>
 
             <div className="preference-card full">
               <div className="preference-card__header">

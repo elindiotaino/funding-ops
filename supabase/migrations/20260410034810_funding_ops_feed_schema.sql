@@ -71,6 +71,9 @@ create table if not exists public.feed_items (
   unique (source_id, source_item_id)
 );
 
+alter table public.feed_items
+  add column if not exists naics_codes jsonb not null default '[]'::jsonb;
+
 create table if not exists public.feed_item_snapshots (
   id uuid primary key default gen_random_uuid(),
   ingestion_run_id uuid not null references public.ingestion_runs(id) on delete cascade,

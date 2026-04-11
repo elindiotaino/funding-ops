@@ -1,4 +1,5 @@
 import { sqlite } from "@/db";
+import { formatNaicsLabel, getNaicsKeywords, inferNaicsCodesFromText } from "@/lib/naics";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseServiceRoleEnv } from "@/lib/supabase/env";
 
@@ -35,6 +36,7 @@ type CompanyProfileInput = {
   companyName: string;
   companySummary: string;
   geography: string;
+  naicsCodes: string[];
   sectors: string[];
   assistanceTypes: string[];
   keywords: string[];
@@ -69,6 +71,7 @@ type RawFeedItem = {
   url: string;
   keywords: string[];
   tags: string[];
+  naicsCodes: string[];
   updatedAt: string;
   createdAt: string;
 };
@@ -148,6 +151,7 @@ const defaultProfile: CompanyProfileInput = {
   companySummary:
     "Small organization seeking grants, assistance programs, jobs, incentives, and recovery opportunities relevant to Puerto Rico operations.",
   geography: "Puerto Rico",
+  naicsCodes: [],
   sectors: ["Small business", "Community programs", "Disability entrepreneurship"],
   assistanceTypes: ["Grants", "Technical assistance", "Jobs", "Recovery funding"],
   keywords: ["Puerto Rico", "small business", "entrepreneurship", "resilience", "grants"],
@@ -517,6 +521,7 @@ function buildSearchableText(item: RawFeedItem) {
       item.audience,
       item.geography,
       item.status,
+      ...item.naicsCodes,
       ...item.tags,
       ...item.keywords,
     ].join(" "),
@@ -531,6 +536,7 @@ function getProfile() {
         company_name as companyName,
         company_summary as companySummary,
         geography,
+        naics_codes as naicsCodes,
         sectors,
         assistance_types as assistanceTypes,
         keywords,
@@ -561,6 +567,7 @@ function getProfile() {
     companyName: String(row.companyName ?? ""),
     companySummary: String(row.companySummary ?? ""),
     geography: String(row.geography ?? ""),
+    naicsCodes: parseArray(String(row.naicsCodes ?? "[]")),
     sectors: parseArray(String(row.sectors ?? "[]")),
     assistanceTypes: parseArray(String(row.assistanceTypes ?? "[]")),
     keywords: parseArray(String(row.keywords ?? "[]")),
@@ -614,20 +621,21 @@ async function getSupabaseWorkspaceData(options?: FundingWorkspaceOptions) {
   }
 
   const supabase = getSupabaseAdminClient();
+  const profile = getProfile();
 
   const pageSize = Math.max(1, options?.pageSize ?? 20);
   const page = Math.max(1, options?.page ?? 1);
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  const [sourcesResult, itemsResult, ingestionRunsResult] = await Promise.all([
+  const [sourcesResult, baseItemsResult, ingestionRunsResult] = await Promise.all([
     supabase.from("official_sources").select(
       "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
     ),
     supabase
       .from("feed_items")
       .select(
-        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at",
+        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, naics_codes, updated_at, created_at",
         { count: "exact" },
       )
       .order("updated_at", { ascending: false })
@@ -641,6 +649,29 @@ async function getSupabaseWorkspaceData(options?: FundingWorkspaceOptions) {
       .order("started_at", { ascending: false })
       .limit(1),
   ]);
+
+  let itemsResult = baseItemsResult;
+  const naicsKeywords = getNaicsKeywords(profile.naicsCodes);
+  if (naicsKeywords.length > 0) {
+    const orClauses = naicsKeywords.flatMap((keyword) => [
+      `title.ilike.%${keyword}%`,
+      `summary.ilike.%${keyword}%`,
+      `eligibility.ilike.%${keyword}%`,
+      `audience.ilike.%${keyword}%`,
+      `geography.ilike.%${keyword}%`,
+    ]);
+
+    itemsResult = await supabase
+      .from("feed_items")
+      .select(
+        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, naics_codes, updated_at, created_at",
+        { count: "exact" },
+      )
+      .or(orClauses.join(","))
+      .order("updated_at", { ascending: false })
+      .order("title", { ascending: true })
+      .range(from, to);
+  }
 
   if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
     console.warn("Falling back to SQLite feed data because Supabase feed read failed.", {
@@ -696,6 +727,12 @@ async function getSupabaseWorkspaceData(options?: FundingWorkspaceOptions) {
     url: item.source_url,
     keywords: parseArray(item.keywords),
     tags: parseArray(item.tags),
+    naicsCodes:
+      parseArray(item.naics_codes).length > 0
+        ? parseArray(item.naics_codes)
+        : inferNaicsCodesFromText(
+            [item.title, item.summary ?? "", item.eligibility ?? "", item.audience ?? "", item.geography ?? ""].join(" "),
+          ),
     updatedAt: item.updated_at ?? nowIso(),
     createdAt: item.created_at ?? nowIso(),
   })) satisfies RawFeedItem[];
@@ -739,6 +776,7 @@ function getFeedItems(options?: FundingWorkspaceOptions) {
         url,
         keywords,
         tags,
+        '[]' as naicsCodes,
         updated_at as updatedAt,
         created_at as createdAt
       FROM feed_items
@@ -764,6 +802,15 @@ function getFeedItems(options?: FundingWorkspaceOptions) {
     url: String(row.url),
     keywords: parseArray(String(row.keywords ?? "[]")),
     tags: parseArray(String(row.tags ?? "[]")),
+    naicsCodes: inferNaicsCodesFromText(
+      [
+        String(row.title),
+        String(row.summary),
+        String(row.eligibility),
+        String(row.audience),
+        String(row.geography),
+      ].join(" "),
+    ),
     updatedAt: String(row.updatedAt ?? nowIso()),
     createdAt: String(row.createdAt ?? nowIso()),
   })) satisfies RawFeedItem[];
@@ -856,6 +903,7 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
   const searchable = buildSearchableText(item);
   const reasons: string[] = [];
   let score = 0;
+  const naicsMatches = profile.naicsCodes.filter((code) => item.naicsCodes.includes(code));
 
   const keywordMatches = normalizeTokens(profile.keywords).filter((token) =>
     searchable.includes(token),
@@ -870,6 +918,23 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
   if (profile.geography && searchable.includes(normalizeText(profile.geography))) {
     score += 18;
     reasons.push(`Matches geography: ${profile.geography}`);
+  }
+
+  if (profile.naicsCodes.length > 0 && naicsMatches.length === 0) {
+    return {
+      score: 0,
+      reasons: ["No NAICS compatibility match."],
+    };
+  }
+
+  if (naicsMatches.length > 0) {
+    score += 30;
+    reasons.push(
+      `NAICS match: ${naicsMatches
+        .slice(0, 2)
+        .map((code) => formatNaicsLabel(code))
+        .join(", ")}`,
+    );
   }
 
   if (keywordMatches.length > 0) {
@@ -904,6 +969,9 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
 }
 
 function matchesEmailPreferences(item: RawFeedItem | ScoredItem, profile: RawCompanyProfile) {
+  const matchesNaics =
+    profile.naicsCodes.length === 0 ||
+    item.naicsCodes.some((code) => profile.naicsCodes.includes(code));
   const matchesCategories =
     profile.emailCategories.length === 0 || profile.emailCategories.includes(item.category);
   const matchesJurisdictions =
@@ -912,7 +980,7 @@ function matchesEmailPreferences(item: RawFeedItem | ScoredItem, profile: RawCom
   const matchesTags =
     profile.emailTags.length === 0 || item.tags.some((tag) => profile.emailTags.includes(tag));
 
-  return matchesCategories && matchesJurisdictions && matchesTags;
+  return matchesNaics && matchesCategories && matchesJurisdictions && matchesTags;
 }
 
 function syncSeedData(triggeredBy: string, notes?: string) {
@@ -1082,6 +1150,7 @@ export function initializeFundingFeed() {
           company_name,
           company_summary,
           geography,
+          naics_codes,
           sectors,
           assistance_types,
         keywords,
@@ -1098,6 +1167,7 @@ export function initializeFundingFeed() {
         defaultProfile.companyName,
         defaultProfile.companySummary,
         defaultProfile.geography,
+        stringifyArray(defaultProfile.naicsCodes),
         stringifyArray(defaultProfile.sectors),
         stringifyArray(defaultProfile.assistanceTypes),
         stringifyArray(defaultProfile.keywords),
@@ -1124,6 +1194,7 @@ export async function saveCompanyProfile(input: CompanyProfileInput) {
         company_name = ?,
         company_summary = ?,
         geography = ?,
+        naics_codes = ?,
         sectors = ?,
         assistance_types = ?,
         keywords = ?,
@@ -1140,6 +1211,7 @@ export async function saveCompanyProfile(input: CompanyProfileInput) {
       input.companyName,
       input.companySummary,
       input.geography,
+      stringifyArray(input.naicsCodes),
       stringifyArray(input.sectors),
       stringifyArray(input.assistanceTypes),
       stringifyArray(input.keywords),
@@ -1242,6 +1314,11 @@ export async function getFundingWorkspaceData(options?: FundingWorkspaceOptions)
         reasons: scored.reasons,
       };
     })
+    .filter(
+      (item) =>
+        profile.naicsCodes.length === 0 ||
+        item.naicsCodes.some((code) => profile.naicsCodes.includes(code)),
+    )
     .sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
   const notifications = buildNotifications(items, profile);
 

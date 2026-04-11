@@ -78,6 +78,7 @@ export function bootstrapDatabase() {
       company_name TEXT NOT NULL,
       company_summary TEXT NOT NULL,
       geography TEXT NOT NULL,
+      naics_codes TEXT NOT NULL DEFAULT '[]',
       sectors TEXT NOT NULL DEFAULT '[]',
       assistance_types TEXT NOT NULL DEFAULT '[]',
       keywords TEXT NOT NULL DEFAULT '[]',
@@ -121,4 +122,5 @@ export function bootstrapDatabase() {
   ensureCompanyProfileColumn("email_categories", "TEXT NOT NULL DEFAULT '[]'");
   ensureCompanyProfileColumn("email_jurisdictions", "TEXT NOT NULL DEFAULT '[]'");
   ensureCompanyProfileColumn("email_tags", "TEXT NOT NULL DEFAULT '[]'");
+  ensureCompanyProfileColumn("naics_codes", "TEXT NOT NULL DEFAULT '[]'");
 }

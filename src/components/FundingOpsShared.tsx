@@ -16,6 +16,7 @@ export type ProfileDraft = {
   companyName: string;
   companySummary: string;
   geography: string;
+  naicsCodes: string[];
   sectors: string;
   assistanceTypes: string;
   keywords: string;
@@ -86,12 +87,14 @@ export function SelectionGroup({
   selected,
   onToggle,
   emptyCopy,
+  formatOptionLabel,
 }: {
   label: string;
   options: string[];
   selected: string[];
   onToggle: (value: string) => void;
   emptyCopy?: string;
+  formatOptionLabel?: (value: string) => string;
 }) {
   return (
     <div className="selection-group">
@@ -112,7 +115,7 @@ export function SelectionGroup({
                 className={`filter-chip ${active ? "filter-chip--active" : ""}`}
                 onClick={() => onToggle(option)}
               >
-                {prettifyLabel(option)}
+                {formatOptionLabel ? formatOptionLabel(option) : prettifyLabel(option)}
               </button>
             );
           })}
