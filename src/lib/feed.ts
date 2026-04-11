@@ -188,6 +188,10 @@ function parseArray(value: unknown) {
   }
 }
 
+function isMissingColumnError(error: { message?: string } | null | undefined, columnName: string) {
+  return Boolean(error?.message?.toLowerCase().includes(columnName.toLowerCase()));
+}
+
 function stringifyArray(values: string[]) {
   return JSON.stringify(values.map((value) => value.trim()).filter(Boolean));
 }
@@ -529,29 +533,62 @@ function buildSearchableText(item: RawFeedItem) {
 }
 
 function getProfile() {
-  const row = sqlite
-    .prepare(`
-      SELECT
-        id,
-        company_name as companyName,
-        company_summary as companySummary,
-        geography,
-        naics_codes as naicsCodes,
-        sectors,
-        assistance_types as assistanceTypes,
-        keywords,
-        notification_mode as notificationMode,
-        notification_email as notificationEmail,
-        daily_summary_enabled as dailySummaryEnabled,
-        email_categories as emailCategories,
-        email_jurisdictions as emailJurisdictions,
-        email_tags as emailTags,
-        last_daily_summary_at as lastDailySummaryAt,
-        updated_at as updatedAt
-      FROM company_profile
-      WHERE id = 1
-    `)
-    .get() as Record<string, unknown> | undefined;
+  let row: Record<string, unknown> | undefined;
+
+  try {
+    row = sqlite
+      .prepare(`
+        SELECT
+          id,
+          company_name as companyName,
+          company_summary as companySummary,
+          geography,
+          naics_codes as naicsCodes,
+          sectors,
+          assistance_types as assistanceTypes,
+          keywords,
+          notification_mode as notificationMode,
+          notification_email as notificationEmail,
+          daily_summary_enabled as dailySummaryEnabled,
+          email_categories as emailCategories,
+          email_jurisdictions as emailJurisdictions,
+          email_tags as emailTags,
+          last_daily_summary_at as lastDailySummaryAt,
+          updated_at as updatedAt
+        FROM company_profile
+        WHERE id = 1
+      `)
+      .get() as Record<string, unknown> | undefined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes("naics_codes")) {
+      throw error;
+    }
+
+    console.warn("Company profile is missing naics_codes column. Falling back to legacy profile schema.");
+    row = sqlite
+      .prepare(`
+        SELECT
+          id,
+          company_name as companyName,
+          company_summary as companySummary,
+          geography,
+          sectors,
+          assistance_types as assistanceTypes,
+          keywords,
+          notification_mode as notificationMode,
+          notification_email as notificationEmail,
+          daily_summary_enabled as dailySummaryEnabled,
+          email_categories as emailCategories,
+          email_jurisdictions as emailJurisdictions,
+          email_tags as emailTags,
+          last_daily_summary_at as lastDailySummaryAt,
+          updated_at as updatedAt
+        FROM company_profile
+        WHERE id = 1
+      `)
+      .get() as Record<string, unknown> | undefined;
+  }
 
   if (!row) {
     return {
@@ -616,141 +653,168 @@ function getSources() {
 }
 
 async function getSupabaseWorkspaceData(options?: FundingWorkspaceOptions) {
-  if (!hasSupabaseServiceRoleEnv()) {
-    return null;
-  }
+  try {
+    if (!hasSupabaseServiceRoleEnv()) {
+      return null;
+    }
 
-  const supabase = getSupabaseAdminClient();
-  const profile = getProfile();
+    const supabase = getSupabaseAdminClient();
+    const profile = getProfile();
 
-  const pageSize = Math.max(1, options?.pageSize ?? 20);
-  const page = Math.max(1, options?.page ?? 1);
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+    const pageSize = Math.max(1, options?.pageSize ?? 20);
+    const page = Math.max(1, options?.page ?? 1);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const baseSelect =
+      "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at";
+    const naicsSelect = `${baseSelect}, naics_codes`;
 
-  const [sourcesResult, baseItemsResult, ingestionRunsResult] = await Promise.all([
-    supabase.from("official_sources").select(
-      "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
-    ),
-    supabase
-      .from("feed_items")
-      .select(
-        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, naics_codes, updated_at, created_at",
-        { count: "exact" },
-      )
-      .order("updated_at", { ascending: false })
-      .order("title", { ascending: true })
-      .range(from, to),
-    supabase
-      .from("ingestion_runs")
-      .select(
-        "id, status, triggered_by, notes, sources_attempted, sources_succeeded, items_upserted, started_at, completed_at",
-      )
-      .order("started_at", { ascending: false })
-      .limit(1),
-  ]);
+    async function loadFeedItems({
+      includeNaicsColumn,
+      naicsKeywords,
+    }: {
+      includeNaicsColumn: boolean;
+      naicsKeywords: string[];
+    }) {
+      let query = supabase
+        .from("feed_items")
+        .select(includeNaicsColumn ? naicsSelect : baseSelect, { count: "exact" })
+        .order("updated_at", { ascending: false })
+        .order("title", { ascending: true });
 
-  let itemsResult = baseItemsResult;
-  const naicsKeywords = getNaicsKeywords(profile.naicsCodes);
-  if (naicsKeywords.length > 0) {
-    const orClauses = naicsKeywords.flatMap((keyword) => [
-      `title.ilike.%${keyword}%`,
-      `summary.ilike.%${keyword}%`,
-      `eligibility.ilike.%${keyword}%`,
-      `audience.ilike.%${keyword}%`,
-      `geography.ilike.%${keyword}%`,
+      if (naicsKeywords.length > 0) {
+        const orClauses = naicsKeywords.flatMap((keyword) => [
+          `title.ilike.%${keyword}%`,
+          `summary.ilike.%${keyword}%`,
+          `eligibility.ilike.%${keyword}%`,
+          `audience.ilike.%${keyword}%`,
+          `geography.ilike.%${keyword}%`,
+        ]);
+        query = query.or(orClauses.join(","));
+      }
+
+      return query.range(from, to);
+    }
+
+    const [sourcesResult, ingestionRunsResult] = await Promise.all([
+      supabase.from("official_sources").select(
+        "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
+      ),
+      supabase
+        .from("ingestion_runs")
+        .select(
+          "id, status, triggered_by, notes, sources_attempted, sources_succeeded, items_upserted, started_at, completed_at",
+        )
+        .order("started_at", { ascending: false })
+        .limit(1),
     ]);
 
-    itemsResult = await supabase
-      .from("feed_items")
-      .select(
-        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, naics_codes, updated_at, created_at",
-        { count: "exact" },
-      )
-      .or(orClauses.join(","))
-      .order("updated_at", { ascending: false })
-      .order("title", { ascending: true })
-      .range(from, to);
-  }
+    const naicsKeywords = getNaicsKeywords(profile.naicsCodes);
+    let itemsResult = await loadFeedItems({ includeNaicsColumn: true, naicsKeywords });
+    let canReadRemoteNaicsColumn = true;
 
-  if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
-    console.warn("Falling back to SQLite feed data because Supabase feed read failed.", {
-      sourcesError: sourcesResult.error?.message,
-      itemsError: itemsResult.error?.message,
-      ingestionRunsError: ingestionRunsResult.error?.message,
+    if (isMissingColumnError(itemsResult.error, "naics_codes")) {
+      console.warn("Supabase feed_items is missing naics_codes. Falling back to inferred NAICS matching.");
+      canReadRemoteNaicsColumn = false;
+      itemsResult = await loadFeedItems({ includeNaicsColumn: false, naicsKeywords });
+    }
+
+    if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
+      console.warn("Falling back to SQLite feed data because Supabase feed read failed.", {
+        sourcesError: sourcesResult.error?.message,
+        itemsError: itemsResult.error?.message,
+        ingestionRunsError: ingestionRunsResult.error?.message,
+      });
+      return null;
+    }
+
+    const remoteSources = ((sourcesResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
+    const remoteItems = ((itemsResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
+    const totalItems = itemsResult.count ?? remoteItems.length;
+
+    if (remoteItems.length === 0) {
+      return null;
+    }
+
+    const sourceSeedMap = new Map(sourceSeeds.map((source) => [source.key, source]));
+    const sourceIdToKey = new Map(
+      remoteSources.map((source) => [source.id, source.source_key as string]),
+    );
+
+    const sources = remoteSources.map((source) => {
+      const seed = sourceSeedMap.get(String(source.source_key));
+
+      return {
+        id: source.id as number | string,
+        sourceKey: String(source.source_key),
+        name: String(source.name),
+        url: String(source.base_url),
+        jurisdiction: String(source.jurisdiction),
+        interfaceType: String(source.interface_type),
+        programTypes: seed?.programTypes ?? [],
+        updateCadence: seed?.updateCadence ?? String(source.default_cadence ?? ""),
+        summary: seed?.summary ?? `${String(source.name)} official source.`,
+        lastSyncedAt:
+          source.last_success_at || source.last_synced_at
+            ? String(source.last_success_at ?? source.last_synced_at)
+            : null,
+      } satisfies RawSource;
     });
+
+    const items = remoteItems.map((item) => {
+      const inferredNaicsCodes = inferNaicsCodesFromText(
+        [
+          String(item.title ?? ""),
+          String(item.summary ?? ""),
+          String(item.eligibility ?? ""),
+          String(item.audience ?? ""),
+          String(item.geography ?? ""),
+        ].join(" "),
+      );
+      const remoteNaicsCodes =
+        canReadRemoteNaicsColumn && "naics_codes" in item ? parseArray(item.naics_codes) : [];
+
+      return {
+        id: item.id as number | string,
+        itemKey: String(item.canonical_key),
+        sourceKey: sourceIdToKey.get(item.source_id) ?? "unknown-source",
+        title: String(item.title),
+        category: String(item.category),
+        jurisdiction: String(item.jurisdiction),
+        audience: String(item.audience ?? ""),
+        summary: String(item.summary ?? ""),
+        eligibility: String(item.eligibility ?? ""),
+        amount: item.amount ? String(item.amount) : null,
+        deadline: item.deadline ? String(item.deadline) : null,
+        geography: String(item.geography ?? ""),
+        status: String(item.status),
+        url: String(item.source_url),
+        keywords: parseArray(item.keywords),
+        tags: parseArray(item.tags),
+        naicsCodes: remoteNaicsCodes.length > 0 ? remoteNaicsCodes : inferredNaicsCodes,
+        updatedAt: String(item.updated_at ?? nowIso()),
+        createdAt: String(item.created_at ?? nowIso()),
+      };
+    }) satisfies RawFeedItem[];
+
+    const latestRun = ingestionRunsResult.data?.[0];
+    const lastIngestionRun = latestRun
+      ? ({
+          id: latestRun.id,
+          status: latestRun.status,
+          triggeredBy: latestRun.triggered_by,
+          notes: latestRun.notes ?? null,
+          sourcesUpserted: latestRun.sources_succeeded ?? latestRun.sources_attempted ?? 0,
+          itemsUpserted: latestRun.items_upserted ?? 0,
+          createdAt: latestRun.completed_at ?? latestRun.started_at ?? nowIso(),
+        } satisfies RawIngestionRun)
+      : null;
+
+    return { items, lastIngestionRun, sources, totalItems };
+  } catch (error) {
+    console.warn("Falling back to SQLite feed data because Supabase feed loading threw an exception.", error);
     return null;
   }
-
-  const remoteSources = sourcesResult.data ?? [];
-  const remoteItems = itemsResult.data ?? [];
-  const totalItems = itemsResult.count ?? remoteItems.length;
-
-  if (remoteItems.length === 0) {
-    return null;
-  }
-
-  const sourceSeedMap = new Map(sourceSeeds.map((source) => [source.key, source]));
-  const sourceIdToKey = new Map(remoteSources.map((source) => [source.id, source.source_key]));
-
-  const sources = remoteSources.map((source) => {
-    const seed = sourceSeedMap.get(source.source_key);
-
-    return {
-      id: source.id,
-      sourceKey: source.source_key,
-      name: source.name,
-      url: source.base_url,
-      jurisdiction: source.jurisdiction,
-      interfaceType: source.interface_type,
-      programTypes: seed?.programTypes ?? [],
-      updateCadence: seed?.updateCadence ?? source.default_cadence,
-      summary: seed?.summary ?? `${source.name} official source.`,
-      lastSyncedAt: source.last_success_at ?? source.last_synced_at ?? null,
-    } satisfies RawSource;
-  });
-
-  const items = remoteItems.map((item) => ({
-    id: item.id,
-    itemKey: item.canonical_key,
-    sourceKey: sourceIdToKey.get(item.source_id) ?? "unknown-source",
-    title: item.title,
-    category: item.category,
-    jurisdiction: item.jurisdiction,
-    audience: item.audience ?? "",
-    summary: item.summary ?? "",
-    eligibility: item.eligibility ?? "",
-    amount: item.amount ?? null,
-    deadline: item.deadline ?? null,
-    geography: item.geography ?? "",
-    status: item.status,
-    url: item.source_url,
-    keywords: parseArray(item.keywords),
-    tags: parseArray(item.tags),
-    naicsCodes:
-      parseArray(item.naics_codes).length > 0
-        ? parseArray(item.naics_codes)
-        : inferNaicsCodesFromText(
-            [item.title, item.summary ?? "", item.eligibility ?? "", item.audience ?? "", item.geography ?? ""].join(" "),
-          ),
-    updatedAt: item.updated_at ?? nowIso(),
-    createdAt: item.created_at ?? nowIso(),
-  })) satisfies RawFeedItem[];
-
-  const latestRun = ingestionRunsResult.data?.[0];
-  const lastIngestionRun = latestRun
-    ? ({
-        id: latestRun.id,
-        status: latestRun.status,
-        triggeredBy: latestRun.triggered_by,
-        notes: latestRun.notes ?? null,
-        sourcesUpserted: latestRun.sources_succeeded ?? latestRun.sources_attempted ?? 0,
-        itemsUpserted: latestRun.items_upserted ?? 0,
-        createdAt: latestRun.completed_at ?? latestRun.started_at ?? nowIso(),
-      } satisfies RawIngestionRun)
-    : null;
-
-  return { items, lastIngestionRun, sources, totalItems };
 }
 
 function getFeedItems(options?: FundingWorkspaceOptions) {
