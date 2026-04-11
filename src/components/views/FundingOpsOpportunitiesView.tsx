@@ -1,5 +1,7 @@
 "use client";
 
+import type { Route } from "next";
+import Link from "next/link";
 import type { FundingWorkspaceData } from "@/lib/feed";
 import {
   FilterState,
@@ -33,6 +35,9 @@ export function FundingOpsOpportunitiesView({
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const filteredItems = useWorkspaceFilters(workspace, filters);
+  const currentPage = workspace.pagination.page;
+  const totalPages = workspace.pagination.totalPages;
+  const totalItems = workspace.pagination.totalItems;
 
   async function handleRefresh() {
     setIsRefreshing(true);
@@ -155,10 +160,11 @@ export function FundingOpsOpportunitiesView({
         <div className="search-panel__header">
           <div>
             <p className="eyebrow">Ranked Feed</p>
-            <h2>Minimal ranked matches from best to weakest fit for the active criteria.</h2>
+            <h2>Minimal ranked matches from best to weakest fit for the current page.</h2>
           </div>
           <div className="result-summary">
-            <span>{filteredItems.length} results</span>
+            <span>{filteredItems.length} shown on this page</span>
+            <span>{totalItems} total in database</span>
             <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
           </div>
         </div>
@@ -208,6 +214,31 @@ export function FundingOpsOpportunitiesView({
               </article>
             ))
           )}
+        </div>
+        <div className="pagination-bar">
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <div className="pagination-bar__actions">
+            {currentPage > 1 ? (
+              <Link
+                className="secondary-link"
+                href={`/opportunities?page=${currentPage - 1}` as Route}
+              >
+                Previous Page
+              </Link>
+            ) : (
+              <span className="pagination-bar__spacer" />
+            )}
+            {currentPage < totalPages ? (
+              <Link
+                className="secondary-link"
+                href={`/opportunities?page=${currentPage + 1}` as Route}
+              >
+                Next Page
+              </Link>
+            ) : null}
+          </div>
         </div>
       </section>
     </>

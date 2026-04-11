@@ -733,6 +733,28 @@ textarea::placeholder {
   flex: 1 1 160px;
 }
 
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.pagination-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-bar__spacer {
+  display: block;
+  min-width: 1px;
+}
+
 .meta-row {
   flex-wrap: wrap;
   margin-top: 10px;
@@ -845,7 +867,8 @@ textarea::placeholder {
 
   .utility-bar,
   .utility-bar__links,
-  .section-heading {
+  .section-heading,
+  .pagination-bar {
     flex-direction: column;
     align-items: stretch;
   }

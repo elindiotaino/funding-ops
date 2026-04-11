@@ -129,7 +129,18 @@ export type FundingWorkspaceData = {
     highlyRelevantItems: number;
     sourcesDueForRefresh: number;
   };
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
   lastIngestionRun: RawIngestionRun | null;
+};
+
+type FundingWorkspaceOptions = {
+  page?: number;
+  pageSize?: number;
 };
 
 const defaultProfile: CompanyProfileInput = {
@@ -597,20 +608,31 @@ function getSources() {
   })) satisfies RawSource[];
 }
 
-async function getSupabaseWorkspaceData() {
+async function getSupabaseWorkspaceData(options?: FundingWorkspaceOptions) {
   if (!hasSupabaseServiceRoleEnv()) {
     return null;
   }
 
   const supabase = getSupabaseAdminClient();
 
+  const pageSize = Math.max(1, options?.pageSize ?? 20);
+  const page = Math.max(1, options?.page ?? 1);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   const [sourcesResult, itemsResult, ingestionRunsResult] = await Promise.all([
     supabase.from("official_sources").select(
       "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
     ),
-    supabase.from("feed_items").select(
-      "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at",
-    ),
+    supabase
+      .from("feed_items")
+      .select(
+        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at",
+        { count: "exact" },
+      )
+      .order("updated_at", { ascending: false })
+      .order("title", { ascending: true })
+      .range(from, to),
     supabase
       .from("ingestion_runs")
       .select(
@@ -631,6 +653,7 @@ async function getSupabaseWorkspaceData() {
 
   const remoteSources = sourcesResult.data ?? [];
   const remoteItems = itemsResult.data ?? [];
+  const totalItems = itemsResult.count ?? remoteItems.length;
 
   if (remoteItems.length === 0) {
     return null;
@@ -690,10 +713,13 @@ async function getSupabaseWorkspaceData() {
       } satisfies RawIngestionRun)
     : null;
 
-  return { items, lastIngestionRun, sources };
+  return { items, lastIngestionRun, sources, totalItems };
 }
 
-function getFeedItems() {
+function getFeedItems(options?: FundingWorkspaceOptions) {
+  const pageSize = Math.max(1, options?.pageSize ?? 20);
+  const page = Math.max(1, options?.page ?? 1);
+  const offset = (page - 1) * pageSize;
   const rows = sqlite
     .prepare(`
       SELECT
@@ -717,8 +743,9 @@ function getFeedItems() {
         created_at as createdAt
       FROM feed_items
       ORDER BY updated_at DESC, title ASC
+      LIMIT ? OFFSET ?
     `)
-    .all() as Record<string, unknown>[];
+    .all(pageSize, offset) as Record<string, unknown>[];
 
   return rows.map((row) => ({
     id: Number(row.id),
@@ -740,6 +767,11 @@ function getFeedItems() {
     updatedAt: String(row.updatedAt ?? nowIso()),
     createdAt: String(row.createdAt ?? nowIso()),
   })) satisfies RawFeedItem[];
+}
+
+function getFeedItemsCount() {
+  const row = sqlite.prepare("SELECT COUNT(*) as count FROM feed_items").get() as { count: number };
+  return row.count;
 }
 
 function getNotifications() {
@@ -1193,11 +1225,14 @@ export function markDailySummarySent() {
     .run();
 }
 
-export async function getFundingWorkspaceData() {
+export async function getFundingWorkspaceData(options?: FundingWorkspaceOptions) {
   const profile = getProfile();
-  const remoteWorkspace = await getSupabaseWorkspaceData();
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = Math.max(1, options?.pageSize ?? 20);
+  const remoteWorkspace = await getSupabaseWorkspaceData({ page, pageSize });
   const sources = remoteWorkspace?.sources ?? getSources();
-  const baseItems = remoteWorkspace?.items ?? getFeedItems();
+  const baseItems = remoteWorkspace?.items ?? getFeedItems({ page, pageSize });
+  const totalItems = remoteWorkspace?.totalItems ?? getFeedItemsCount();
   const items = baseItems
     .map((item) => {
       const scored = scoreItem(item, profile);
@@ -1233,10 +1268,16 @@ export async function getFundingWorkspaceData() {
     },
     metrics: {
       totalSources: sources.length,
-      totalItems: items.length,
+      totalItems,
       totalNotifications: notifications.length,
       highlyRelevantItems: items.filter((item) => item.relevanceScore >= 55).length,
       sourcesDueForRefresh: sources.filter((source) => !source.lastSyncedAt).length,
+    },
+    pagination: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages: Math.max(1, Math.ceil(totalItems / pageSize)),
     },
     lastIngestionRun,
   } satisfies FundingWorkspaceData;

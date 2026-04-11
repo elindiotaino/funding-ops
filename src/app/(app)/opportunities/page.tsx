@@ -4,8 +4,17 @@ import { getFundingAppPageData } from "@/lib/funding-app";
 
 export const dynamic = "force-dynamic";
 
-export default async function OpportunitiesPage() {
-  const data = await getFundingAppPageData();
+export default async function OpportunitiesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const params = await searchParams;
+  const page = Number.parseInt(params.page ?? "1", 10);
+  const data = await getFundingAppPageData({
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+    pageSize: 20,
+  });
 
   return (
     <>
