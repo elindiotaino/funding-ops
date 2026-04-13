@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
-import { NAICS_OPTIONS } from "@/lib/naics";
+import { getFullNaicsOption, searchFullNaicsCatalog } from "@/lib/naics";
 
 type NaicsSearchResult = {
   code: string;
@@ -9,11 +9,6 @@ type NaicsSearchResult = {
 };
 
 const EXACT_NAICS_CODE_PATTERN = /^\d{2,6}$/;
-
-const LOCAL_NAICS_RESULTS = NAICS_OPTIONS.map((option) => ({
-  code: option.code,
-  label: option.label,
-}));
 
 function decodeEntities(value: string) {
   return value
@@ -40,19 +35,6 @@ function dedupeResults(results: NaicsSearchResult[]) {
     seen.add(key);
     return true;
   });
-}
-
-function searchLocalNaics(query: string) {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return [] as NaicsSearchResult[];
-  }
-
-  return LOCAL_NAICS_RESULTS.filter(
-    (option) =>
-      option.code.toLowerCase().includes(normalized) ||
-      option.label.toLowerCase().includes(normalized),
-  ).slice(0, 20);
 }
 
 function parseOfficialNaicsResults(html: string) {
@@ -223,16 +205,15 @@ export async function GET(request: Request) {
   );
 
   if (!query && codes.length === 0) {
-    return NextResponse.json({ results: [] });
+      return NextResponse.json({ results: [] });
   }
 
   try {
     if (codes.length > 0) {
-      const localMap = new Map(LOCAL_NAICS_RESULTS.map((option) => [option.code, option]));
       const resolved: NaicsSearchResult[] = [];
 
       for (const code of codes.slice(0, 50)) {
-        const local = localMap.get(code);
+        const local = getFullNaicsOption(code);
         if (local) {
           resolved.push(local);
           continue;
@@ -250,10 +231,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ results: dedupeResults(resolved) });
     }
 
-    const localResults = searchLocalNaics(query);
+    const localResults = searchFullNaicsCatalog(query).map((option) => ({
+      code: option.code,
+      label: option.label,
+    }));
+    if (localResults.length > 0) {
+      return NextResponse.json({ results: localResults });
+    }
+
     const officialResults = await fetchOfficialNaics(query);
     return NextResponse.json({
-      results: dedupeResults([...localResults, ...officialResults]).slice(0, 20),
+      results: dedupeResults(officialResults).slice(0, 20),
     });
   } catch (error) {
     return NextResponse.json(

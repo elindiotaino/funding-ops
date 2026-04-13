@@ -21,7 +21,35 @@ const NAICS_OPTIONS = [
   { code: "92", keywords: ["public administration", "government operations", "municipal", "agency", "public sector", "civic"] },
 ] as const;
 
-const naicsMap = new Map(NAICS_OPTIONS.map((option) => [option.code, option]));
+type NaicsSectorOption = (typeof NAICS_OPTIONS)[number];
+
+const naicsMap = new Map<string, NaicsSectorOption>(NAICS_OPTIONS.map((option) => [option.code, option]));
+
+function getSectorCode(code: string) {
+  const normalized = code.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (naicsMap.has(normalized)) {
+    return normalized;
+  }
+
+  if (/^(31|32|33)/.test(normalized)) {
+    return "31-33";
+  }
+
+  if (/^(44|45)/.test(normalized)) {
+    return "44-45";
+  }
+
+  if (/^(48|49)/.test(normalized)) {
+    return "48-49";
+  }
+
+  const twoDigit = normalized.slice(0, 2);
+  return naicsMap.has(twoDigit) ? twoDigit : null;
+}
 
 export function inferNaicsCodesFromText(text: string) {
   const normalized = text.toLowerCase();
@@ -34,6 +62,13 @@ export function inferNaicsCodesFromText(text: string) {
 
 export function getNaicsKeywords(codes: string[]) {
   return Array.from(
-    new Set(codes.flatMap((code) => naicsMap.get(code as (typeof NAICS_OPTIONS)[number]["code"])?.keywords ?? [])),
+    new Set(
+      codes.flatMap((code) => {
+        const sectorCode = getSectorCode(code);
+        return sectorCode
+          ? naicsMap.get(sectorCode)?.keywords ?? []
+          : [];
+      }),
+    ),
   );
 }

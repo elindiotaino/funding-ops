@@ -1,7 +1,15 @@
+import fullNaicsCatalog from "@/data/naics-2022-full.json";
+
 export type NaicsOption = {
   code: string;
   label: string;
   keywords: string[];
+};
+
+export type FullNaicsOption = {
+  code: string;
+  label: string;
+  level: number;
 };
 
 export const NAICS_OPTIONS: NaicsOption[] = [
@@ -27,10 +35,46 @@ export const NAICS_OPTIONS: NaicsOption[] = [
   { code: "92", label: "Public Administration", keywords: ["public administration", "government operations", "municipal", "agency", "public sector", "civic"] },
 ];
 
-const naicsMap = new Map(NAICS_OPTIONS.map((option) => [option.code, option]));
+export const FULL_NAICS_OPTIONS = fullNaicsCatalog as FullNaicsOption[];
+
+const naicsMap = new Map<string, NaicsOption>(NAICS_OPTIONS.map((option) => [option.code, option]));
+const fullNaicsMap = new Map<string, FullNaicsOption>(
+  FULL_NAICS_OPTIONS.map((option) => [option.code, option]),
+);
+
+function getSectorCode(code: string) {
+  const normalized = code.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (naicsMap.has(normalized)) {
+    return normalized;
+  }
+
+  if (/^(31|32|33)/.test(normalized)) {
+    return "31-33";
+  }
+
+  if (/^(44|45)/.test(normalized)) {
+    return "44-45";
+  }
+
+  if (/^(48|49)/.test(normalized)) {
+    return "48-49";
+  }
+
+  const twoDigit = normalized.slice(0, 2);
+  return naicsMap.has(twoDigit) ? twoDigit : null;
+}
 
 export function getNaicsOption(code: string) {
-  return naicsMap.get(code);
+  const sectorCode = getSectorCode(code);
+  return sectorCode ? naicsMap.get(sectorCode) : undefined;
+}
+
+export function getFullNaicsOption(code: string) {
+  return fullNaicsMap.get(code.trim());
 }
 
 export function getNaicsKeywords(codes: string[]) {
@@ -42,8 +86,72 @@ export function getNaicsKeywords(codes: string[]) {
 }
 
 export function formatNaicsLabel(code: string) {
+  const fullOption = getFullNaicsOption(code);
+  if (fullOption) {
+    return `${fullOption.code} ${fullOption.label}`;
+  }
+
   const option = getNaicsOption(code);
-  return option ? `${option.code} ${option.label}` : code;
+  return option ? `${code} ${option.label}` : code;
+}
+
+function getSearchScore(option: FullNaicsOption, normalizedQuery: string) {
+  const normalizedCode = option.code.toLowerCase();
+  const normalizedLabel = option.label.toLowerCase();
+
+  if (normalizedCode === normalizedQuery) {
+    return 0;
+  }
+
+  if (normalizedCode.startsWith(normalizedQuery)) {
+    return 1;
+  }
+
+  if (normalizedLabel.startsWith(normalizedQuery)) {
+    return 2;
+  }
+
+  const wordIndex = normalizedLabel.indexOf(` ${normalizedQuery}`);
+  if (wordIndex >= 0) {
+    return 3;
+  }
+
+  if (normalizedLabel.includes(normalizedQuery)) {
+    return 4;
+  }
+
+  if (normalizedCode.includes(normalizedQuery)) {
+    return 5;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+export function searchFullNaicsCatalog(query: string, limit = 20) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return [] as FullNaicsOption[];
+  }
+
+  return FULL_NAICS_OPTIONS
+    .map((option) => ({
+      option,
+      score: getSearchScore(option, normalized),
+    }))
+    .filter((entry) => Number.isFinite(entry.score))
+    .sort((left, right) => {
+      if (left.score !== right.score) {
+        return left.score - right.score;
+      }
+
+      if (left.option.code.length !== right.option.code.length) {
+        return left.option.code.length - right.option.code.length;
+      }
+
+      return left.option.code.localeCompare(right.option.code);
+    })
+    .slice(0, limit)
+    .map((entry) => entry.option);
 }
 
 export function inferNaicsCodesFromText(text: string) {
