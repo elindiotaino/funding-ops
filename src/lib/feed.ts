@@ -124,6 +124,7 @@ export type FundingWorkspaceData = {
     categories: string[];
     jurisdictions: string[];
     tags: string[];
+    naicsCodes: string[];
   };
   metrics: {
     totalSources: number;
@@ -1407,6 +1408,9 @@ export async function getFundingWorkspaceData(
   const jurisdictions = Array.from(new Set(items.map((item) => item.jurisdiction))).sort((a, b) =>
     a.localeCompare(b),
   );
+  const naicsCodes = Array.from(new Set(items.flatMap((item) => item.naicsCodes))).sort((a, b) =>
+    a.localeCompare(b),
+  );
   const lastIngestionRun = remoteWorkspace?.lastIngestionRun ?? getLastIngestionRun();
 
   return {
@@ -1418,6 +1422,7 @@ export async function getFundingWorkspaceData(
       categories,
       jurisdictions,
       tags: allTags,
+      naicsCodes,
     },
     metrics: {
       totalSources: sources.length,

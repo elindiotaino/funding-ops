@@ -9,6 +9,7 @@ export type FilterState = {
   categories: string[];
   jurisdictions: string[];
   tags: string[];
+  naicsCodes: string[];
   onlyRecommended: boolean;
 };
 
@@ -33,6 +34,7 @@ export const initialFilters: FilterState = {
   categories: [],
   jurisdictions: [],
   tags: [],
+  naicsCodes: [],
   onlyRecommended: false,
 };
 
@@ -165,6 +167,7 @@ export function useWorkspaceFilters(workspace: FundingWorkspaceData, filters: Fi
           item.jurisdiction,
           item.audience,
           item.geography,
+          ...item.naicsCodes,
           ...item.tags,
           ...item.keywords,
         ]
@@ -179,6 +182,9 @@ export function useWorkspaceFilters(workspace: FundingWorkspaceData, filters: Fi
         filters.jurisdictions.includes(item.jurisdiction);
       const matchesTag =
         filters.tags.length === 0 || item.tags.some((tag) => filters.tags.includes(tag));
+      const matchesNaics =
+        filters.naicsCodes.length === 0 ||
+        item.naicsCodes.some((code) => filters.naicsCodes.includes(code));
       const matchesRecommendation = !filters.onlyRecommended || item.relevanceScore >= 45;
 
       return (
@@ -186,6 +192,7 @@ export function useWorkspaceFilters(workspace: FundingWorkspaceData, filters: Fi
         matchesCategory &&
         matchesJurisdiction &&
         matchesTag &&
+        matchesNaics &&
         matchesRecommendation
       );
     });

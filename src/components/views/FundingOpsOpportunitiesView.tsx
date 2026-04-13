@@ -3,6 +3,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import type { FundingWorkspaceData } from "@/lib/feed";
+import { formatNaicsLabel } from "@/lib/naics";
 import {
   FilterState,
   formatDateLabel,
@@ -82,7 +83,7 @@ export function FundingOpsOpportunitiesView({
         <div className="search-panel__header">
           <div>
             <p className="eyebrow">Search And Filters</p>
-            <h2>Filter by keyword, type, region, and tags without digging through every source.</h2>
+            <h2>Filter by keyword, type, region, NAICS, and tags without digging through every source.</h2>
           </div>
           <button
             type="button"
@@ -120,6 +121,21 @@ export function FundingOpsOpportunitiesView({
         </div>
 
         <div className="filter-groups">
+          {workspace.profile.naicsCodes.length > 0 ? (
+            <div className="selection-group">
+              <div className="selection-group__header">
+                <span>Profile NAICS scope</span>
+                <strong>{workspace.profile.naicsCodes.length} active</strong>
+              </div>
+              <div className="chip-grid">
+                {workspace.profile.naicsCodes.map((code) => (
+                  <span className="filter-chip filter-chip--static" key={`profile-naics-${code}`}>
+                    {formatNaicsLabel(code)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <SelectionGroup
             label="Opportunity types"
             options={workspace.filters.categories}
@@ -141,6 +157,19 @@ export function FundingOpsOpportunitiesView({
                 jurisdictions: toggleSelection(current.jurisdictions, value),
               }))
             }
+          />
+          <SelectionGroup
+            label="NAICS sectors"
+            options={workspace.filters.naicsCodes}
+            selected={filters.naicsCodes}
+            onToggle={(value) =>
+              setFilters((current) => ({
+                ...current,
+                naicsCodes: toggleSelection(current.naicsCodes, value),
+              }))
+            }
+            emptyCopy="No NAICS codes are attached to the current result set yet."
+            formatOptionLabel={formatNaicsLabel}
           />
           <SelectionGroup
             label="Tags"
@@ -165,6 +194,11 @@ export function FundingOpsOpportunitiesView({
           <div className="result-summary">
             <span>{filteredItems.length} shown on this page</span>
             <span>{totalItems} total in database</span>
+            <span>
+              {workspace.profile.naicsCodes.length > 0
+                ? `${workspace.profile.naicsCodes.length} profile NAICS active`
+                : "No profile NAICS restriction"}
+            </span>
             <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
           </div>
         </div>
@@ -199,6 +233,11 @@ export function FundingOpsOpportunitiesView({
                       : "No strong profile signals yet."}
                   </p>
                   <div className="tag-row">
+                    {item.naicsCodes.slice(0, 3).map((code) => (
+                      <span className="filter-chip filter-chip--static" key={`${item.id}-naics-${code}`}>
+                        {formatNaicsLabel(code)}
+                      </span>
+                    ))}
                     {item.tags.slice(0, 5).map((tag) => (
                       <span className="filter-chip filter-chip--static" key={`${item.id}-${tag}`}>
                         {tag}
