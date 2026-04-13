@@ -8,6 +8,8 @@ type NaicsSearchResult = {
   label: string;
 };
 
+const EXACT_NAICS_CODE_PATTERN = /^\d{2,6}$/;
+
 const LOCAL_NAICS_RESULTS = NAICS_OPTIONS.map((option) => ({
   code: option.code,
   label: option.label,
@@ -53,22 +55,7 @@ function searchLocalNaics(query: string) {
   ).slice(0, 20);
 }
 
-async function fetchOfficialNaics(query: string) {
-  const response = await fetch(
-    `https://www.census.gov/naics/?input=${encodeURIComponent(query)}&year=2022`,
-    {
-      headers: {
-        "user-agent": "FundingOps/1.0 NAICS lookup",
-      },
-      cache: "no-store",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Official NAICS lookup failed with status ${response.status}.`);
-  }
-
-  const html = await response.text();
+function parseOfficialNaicsResults(html: string) {
   const matches = Array.from(
     html.matchAll(/<a[^>]+href="\/naics\/\?[^"]*details=([^"&]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi),
   );
@@ -86,8 +73,114 @@ async function fetchOfficialNaics(query: string) {
     })
     .filter((result): result is NaicsSearchResult => Boolean(result));
 
+  return dedupeResults(results).slice(0, 20);
+}
+
+function parseOfficialNaicsDetail(code: string, html: string) {
+  const normalizedCode = code.trim();
+  if (!normalizedCode) {
+    return null;
+  }
+
+  const headerPatterns = [
+    new RegExp(
+      `<h[1-6][^>]*>[\\s\\S]*?${normalizedCode}\\s*(?:<sup[^>]*>[\\s\\S]*?<\\/sup>)?\\s*([^<]+?)<\\/h[1-6]>`,
+      "i",
+    ),
+    new RegExp(
+      `<a[^>]+name="${normalizedCode}"[^>]*>[\\s\\S]*?<\\/a>[\\s\\S]*?<h[1-6][^>]*>\\s*${normalizedCode}\\s*(?:<sup[^>]*>[\\s\\S]*?<\\/sup>)?\\s*([^<]+?)<\\/h[1-6]>`,
+      "i",
+    ),
+    new RegExp(
+      `>${normalizedCode}\\s*(?:<sup[^>]*>[\\s\\S]*?<\\/sup>)?\\s*([^<]{3,200}?)<`,
+      "i",
+    ),
+  ];
+
+  for (const pattern of headerPatterns) {
+    const match = html.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    const label = stripHtml(match[1] ?? "").trim();
+    if (label) {
+      return { code: normalizedCode, label };
+    }
+  }
+
+  return null;
+}
+
+function buildArchiveSectorCandidates(code: string) {
+  const twoDigit = code.slice(0, 2);
+  const candidates = [twoDigit];
+
+  if (twoDigit === "32" || twoDigit === "33") {
+    candidates.push("31");
+  }
+
+  if (twoDigit === "45") {
+    candidates.push("44");
+  }
+
+  if (twoDigit === "49") {
+    candidates.push("48");
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+async function fetchOfficialNaicsDetail(code: string) {
+  for (const sector of buildArchiveSectorCandidates(code)) {
+    const response = await fetch(`https://www.census.gov/naics/resources/archives/sect${sector}.html`, {
+      headers: {
+        "user-agent": "FundingOps/1.0 NAICS lookup",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      continue;
+    }
+
+    const html = await response.text();
+    const detail = parseOfficialNaicsDetail(code, html);
+    if (detail) {
+      return detail;
+    }
+  }
+
+  return null;
+}
+
+async function fetchOfficialNaics(query: string) {
+  if (EXACT_NAICS_CODE_PATTERN.test(query)) {
+    const detail = await fetchOfficialNaicsDetail(query);
+    if (detail) {
+      return [detail];
+    }
+  }
+
+  const response = await fetch(
+    `https://www.census.gov/naics/?input=${encodeURIComponent(query)}&year=2022`,
+    {
+      headers: {
+        "user-agent": "FundingOps/1.0 NAICS lookup",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Official NAICS lookup failed with status ${response.status}.`);
+  }
+
+  const html = await response.text();
+  const results = parseOfficialNaicsResults(html);
+
   if (results.length > 0) {
-    return dedupeResults(results).slice(0, 20);
+    return results;
   }
 
   const pageTitleMatch = html.match(/<title>([\s\S]*?)<\/title>/i);
@@ -100,6 +193,13 @@ async function fetchOfficialNaics(query: string) {
         label: detailMatch[2].trim(),
       },
     ];
+  }
+
+  if (EXACT_NAICS_CODE_PATTERN.test(query)) {
+    const detail = await fetchOfficialNaicsDetail(query);
+    if (detail) {
+      return [detail];
+    }
   }
 
   return [];
