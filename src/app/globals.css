@@ -755,6 +755,51 @@ textarea::placeholder {
   min-width: 1px;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.76);
+  backdrop-filter: blur(12px);
+}
+
+.modal-panel {
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.modal-detail-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.modal-detail-section {
+  min-width: 0;
+}
+
+.detail-payload {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-payload__row {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.detail-payload__row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .meta-row {
   flex-wrap: wrap;
   margin-top: 10px;

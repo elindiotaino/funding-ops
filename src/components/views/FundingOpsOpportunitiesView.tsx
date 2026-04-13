@@ -25,6 +25,39 @@ type OpportunitiesViewProps = {
   initialWorkspace: FundingWorkspaceData;
 };
 
+type FeedItemDetailResponse = {
+  item: {
+    id: string;
+    itemKey: string;
+    title: string;
+    category: string;
+    jurisdiction: string;
+    audience: string;
+    summary: string;
+    eligibility: string;
+    amount: string | null;
+    deadline: string | null;
+    geography: string;
+    status: string;
+    url: string;
+    updatedAt: string;
+    createdAt: string;
+    keywords: string[];
+    tags: string[];
+    naicsCodes: string[];
+    sourceKey: string;
+    sourceName: string;
+  };
+  detail: {
+    detailStatus: string;
+    detailPayload: Record<string, unknown>;
+    fetchedAt: string | null;
+    expiresAt: string | null;
+    sourceDetailUrl: string | null;
+    errorMessage: string | null;
+  };
+};
+
 export function FundingOpsOpportunitiesView({
   appUrl,
   basePath,
@@ -37,6 +70,11 @@ export function FundingOpsOpportunitiesView({
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBrowsingHistory, setIsBrowsingHistory] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedItemDetail, setSelectedItemDetail] = useState<FeedItemDetailResponse | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isRefreshingDetail, setIsRefreshingDetail] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const filteredItems = useWorkspaceFilters(workspace, filters);
@@ -87,6 +125,54 @@ export function FundingOpsOpportunitiesView({
       const query = params.toString();
       router.push((query ? `/opportunities?${query}` : "/opportunities") as Route);
     });
+  }
+
+  async function loadItemDetail(itemId: string, mode: "load" | "refresh") {
+    const endpoint = `${basePath}/api/feed-items/${itemId}`;
+    const isRefresh = mode === "refresh";
+    if (isRefresh) {
+      setIsRefreshingDetail(true);
+    } else {
+      setIsLoadingDetail(true);
+      setDetailError(null);
+      setSelectedItemDetail(null);
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: isRefresh ? "POST" : "GET",
+        cache: "no-store",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not load feed item detail.");
+      }
+
+      setSelectedItemDetail((isRefresh ? payload.detail : payload) as FeedItemDetailResponse);
+      setDetailError(null);
+    } catch (loadError) {
+      setDetailError(loadError instanceof Error ? loadError.message : "Could not load feed item detail.");
+    } finally {
+      if (isRefresh) {
+        setIsRefreshingDetail(false);
+      } else {
+        setIsLoadingDetail(false);
+      }
+    }
+  }
+
+  function openDetailModal(itemId: string) {
+    setSelectedItemId(itemId);
+    void loadItemDetail(itemId, "load");
+    void loadItemDetail(itemId, "refresh");
+  }
+
+  function closeDetailModal() {
+    setSelectedItemId(null);
+    setSelectedItemDetail(null);
+    setDetailError(null);
+    setIsLoadingDetail(false);
+    setIsRefreshingDetail(false);
   }
 
   async function handleRefresh() {
@@ -336,6 +422,11 @@ export function FundingOpsOpportunitiesView({
                     ))}
                   </div>
                   <p>
+                    <button type="button" onClick={() => openDetailModal(String(item.id))}>
+                      View details
+                    </button>
+                  </p>
+                  <p>
                     <a href={item.url} target="_blank" rel="noreferrer">
                       Open item source
                     </a>
@@ -379,6 +470,140 @@ export function FundingOpsOpportunitiesView({
           </div>
         </div>
       </section>
+
+      {selectedItemId ? (
+        <div className="modal-backdrop" role="presentation" onClick={closeDetailModal}>
+          <section
+            className="modal-panel panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="feed-item-detail-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="search-panel__header">
+              <div>
+                <p className="eyebrow">Item Detail</p>
+                <h2 id="feed-item-detail-title">
+                  {selectedItemDetail?.item.title ?? "Loading opportunity detail"}
+                </h2>
+                <p className="ranked-item__summary">
+                  {selectedItemDetail
+                    ? `${selectedItemDetail.item.sourceName} · ${prettifyLabel(selectedItemDetail.item.category)}`
+                    : "Fetching stored detail and on-demand refresh output."}
+                </p>
+              </div>
+              <div className="utility-bar__links">
+                <button
+                  type="button"
+                  onClick={() => selectedItemId && void loadItemDetail(selectedItemId, "refresh")}
+                  disabled={isRefreshingDetail}
+                >
+                  {isRefreshingDetail ? "Refreshing detail..." : "Refresh detail"}
+                </button>
+                <button type="button" className="secondary-link" onClick={closeDetailModal}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {detailError ? <p className="notice error">{detailError}</p> : null}
+            {isLoadingDetail && !selectedItemDetail ? (
+              <div className="empty">Loading item detail...</div>
+            ) : selectedItemDetail ? (
+              <div className="modal-detail-grid">
+                <section className="modal-detail-section">
+                  <div className="ranked-item__meta">
+                    <span>{selectedItemDetail.item.jurisdiction}</span>
+                    <span>{formatDateLabel(selectedItemDetail.item.deadline)}</span>
+                    <span>{selectedItemDetail.detail.detailStatus}</span>
+                  </div>
+                  <p>{selectedItemDetail.item.summary || "No summary provided."}</p>
+                  <p>{selectedItemDetail.item.eligibility || "No eligibility detail provided."}</p>
+                  <div className="tag-row">
+                    {selectedItemDetail.item.naicsCodes.map((code) => (
+                      <span className="filter-chip filter-chip--static" key={`detail-naics-${code}`}>
+                        {formatNaicsLabel(code)}
+                      </span>
+                    ))}
+                    {selectedItemDetail.item.tags.map((tag) => (
+                      <span className="filter-chip filter-chip--static" key={`detail-tag-${tag}`}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="modal-detail-section">
+                  <div className="list">
+                    <article className="list-item">
+                      <div className="list-header">
+                        <strong>Source links</strong>
+                      </div>
+                      <p>
+                        <a href={selectedItemDetail.item.url} target="_blank" rel="noreferrer">
+                          Open item source
+                        </a>
+                      </p>
+                      {selectedItemDetail.detail.sourceDetailUrl ? (
+                        <p>
+                          <a
+                            href={selectedItemDetail.detail.sourceDetailUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open source detail
+                          </a>
+                        </p>
+                      ) : null}
+                    </article>
+                    <article className="list-item">
+                      <div className="list-header">
+                        <strong>Detail status</strong>
+                      </div>
+                      <p>
+                        Last fetched:{" "}
+                        {selectedItemDetail.detail.fetchedAt
+                          ? formatDateLabel(selectedItemDetail.detail.fetchedAt)
+                          : "Not fetched yet"}
+                      </p>
+                      <p>
+                        Amount: {selectedItemDetail.item.amount ?? "Not specified"} · Geography:{" "}
+                        {selectedItemDetail.item.geography || "Not specified"}
+                      </p>
+                      {selectedItemDetail.detail.errorMessage ? (
+                        <p>{selectedItemDetail.detail.errorMessage}</p>
+                      ) : null}
+                    </article>
+                    <article className="list-item">
+                      <div className="list-header">
+                        <strong>Detail payload</strong>
+                      </div>
+                      {Object.keys(selectedItemDetail.detail.detailPayload).length === 0 ? (
+                        <p>No cached detail payload yet.</p>
+                      ) : (
+                        <div className="detail-payload">
+                          {Object.entries(selectedItemDetail.detail.detailPayload).map(([key, value]) => (
+                            <div className="detail-payload__row" key={key}>
+                              <strong>{prettifyLabel(key)}</strong>
+                              <span>
+                                {typeof value === "string"
+                                  ? value
+                                  : typeof value === "number" || typeof value === "boolean"
+                                    ? String(value)
+                                    : JSON.stringify(value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </div>
+                </section>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }
