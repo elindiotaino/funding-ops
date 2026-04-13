@@ -1306,7 +1306,7 @@ export function initializeFundingFeed() {
         email_categories,
         email_jurisdictions,
         email_tags
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         1,
