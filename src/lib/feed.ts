@@ -652,169 +652,162 @@ function getSources() {
   })) satisfies RawSource[];
 }
 
-async function getSupabaseWorkspaceData(options?: FundingWorkspaceOptions) {
-  try {
-    if (!hasSupabaseServiceRoleEnv()) {
-      return null;
-    }
-
-    const supabase = getSupabaseAdminClient();
-    const profile = getProfile();
-
-    const pageSize = Math.max(1, options?.pageSize ?? 20);
-    const page = Math.max(1, options?.page ?? 1);
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    const baseSelect =
-      "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at";
-    const naicsSelect = `${baseSelect}, naics_codes`;
-
-    async function loadFeedItems({
-      includeNaicsColumn,
-      naicsKeywords,
-    }: {
-      includeNaicsColumn: boolean;
-      naicsKeywords: string[];
-    }) {
-      let query = supabase
-        .from("feed_items")
-        .select(includeNaicsColumn ? naicsSelect : baseSelect, { count: "exact" })
-        .order("updated_at", { ascending: false })
-        .order("title", { ascending: true });
-
-      if (naicsKeywords.length > 0) {
-        const orClauses = naicsKeywords.flatMap((keyword) => [
-          `title.ilike.%${keyword}%`,
-          `summary.ilike.%${keyword}%`,
-          `eligibility.ilike.%${keyword}%`,
-          `audience.ilike.%${keyword}%`,
-          `geography.ilike.%${keyword}%`,
-        ]);
-        query = query.or(orClauses.join(","));
-      }
-
-      return query.range(from, to);
-    }
-
-    const [sourcesResult, ingestionRunsResult] = await Promise.all([
-      supabase.from("official_sources").select(
-        "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
-      ),
-      supabase
-        .from("ingestion_runs")
-        .select(
-          "id, status, triggered_by, notes, sources_attempted, sources_succeeded, items_upserted, started_at, completed_at",
-        )
-        .order("started_at", { ascending: false })
-        .limit(1),
-    ]);
-
-    const naicsKeywords = getNaicsKeywords(profile.naicsCodes);
-    let itemsResult = await loadFeedItems({ includeNaicsColumn: true, naicsKeywords });
-    let canReadRemoteNaicsColumn = true;
-
-    if (isMissingColumnError(itemsResult.error, "naics_codes")) {
-      console.warn("Supabase feed_items is missing naics_codes. Falling back to inferred NAICS matching.");
-      canReadRemoteNaicsColumn = false;
-      itemsResult = await loadFeedItems({ includeNaicsColumn: false, naicsKeywords });
-    }
-
-    if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
-      console.warn("Falling back to SQLite feed data because Supabase feed read failed.", {
-        sourcesError: sourcesResult.error?.message,
-        itemsError: itemsResult.error?.message,
-        ingestionRunsError: ingestionRunsResult.error?.message,
-      });
-      return null;
-    }
-
-    const remoteSources = ((sourcesResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
-    const remoteItems = ((itemsResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
-    const totalItems = itemsResult.count ?? remoteItems.length;
-
-    if (remoteItems.length === 0) {
-      return null;
-    }
-
-    const sourceSeedMap = new Map(sourceSeeds.map((source) => [source.key, source]));
-    const sourceIdToKey = new Map(
-      remoteSources.map((source) => [source.id, source.source_key as string]),
-    );
-
-    const sources = remoteSources.map((source) => {
-      const seed = sourceSeedMap.get(String(source.source_key));
-
-      return {
-        id: source.id as number | string,
-        sourceKey: String(source.source_key),
-        name: String(source.name),
-        url: String(source.base_url),
-        jurisdiction: String(source.jurisdiction),
-        interfaceType: String(source.interface_type),
-        programTypes: seed?.programTypes ?? [],
-        updateCadence: seed?.updateCadence ?? String(source.default_cadence ?? ""),
-        summary: seed?.summary ?? `${String(source.name)} official source.`,
-        lastSyncedAt:
-          source.last_success_at || source.last_synced_at
-            ? String(source.last_success_at ?? source.last_synced_at)
-            : null,
-      } satisfies RawSource;
-    });
-
-    const items = remoteItems.map((item) => {
-      const inferredNaicsCodes = inferNaicsCodesFromText(
-        [
-          String(item.title ?? ""),
-          String(item.summary ?? ""),
-          String(item.eligibility ?? ""),
-          String(item.audience ?? ""),
-          String(item.geography ?? ""),
-        ].join(" "),
-      );
-      const remoteNaicsCodes =
-        canReadRemoteNaicsColumn && "naics_codes" in item ? parseArray(item.naics_codes) : [];
-
-      return {
-        id: item.id as number | string,
-        itemKey: String(item.canonical_key),
-        sourceKey: sourceIdToKey.get(item.source_id) ?? "unknown-source",
-        title: String(item.title),
-        category: String(item.category),
-        jurisdiction: String(item.jurisdiction),
-        audience: String(item.audience ?? ""),
-        summary: String(item.summary ?? ""),
-        eligibility: String(item.eligibility ?? ""),
-        amount: item.amount ? String(item.amount) : null,
-        deadline: item.deadline ? String(item.deadline) : null,
-        geography: String(item.geography ?? ""),
-        status: String(item.status),
-        url: String(item.source_url),
-        keywords: parseArray(item.keywords),
-        tags: parseArray(item.tags),
-        naicsCodes: remoteNaicsCodes.length > 0 ? remoteNaicsCodes : inferredNaicsCodes,
-        updatedAt: String(item.updated_at ?? nowIso()),
-        createdAt: String(item.created_at ?? nowIso()),
-      };
-    }) satisfies RawFeedItem[];
-
-    const latestRun = ingestionRunsResult.data?.[0];
-    const lastIngestionRun = latestRun
-      ? ({
-          id: latestRun.id,
-          status: latestRun.status,
-          triggeredBy: latestRun.triggered_by,
-          notes: latestRun.notes ?? null,
-          sourcesUpserted: latestRun.sources_succeeded ?? latestRun.sources_attempted ?? 0,
-          itemsUpserted: latestRun.items_upserted ?? 0,
-          createdAt: latestRun.completed_at ?? latestRun.started_at ?? nowIso(),
-        } satisfies RawIngestionRun)
-      : null;
-
-    return { items, lastIngestionRun, sources, totalItems };
-  } catch (error) {
-    console.warn("Falling back to SQLite feed data because Supabase feed loading threw an exception.", error);
+async function getSupabaseWorkspaceData(
+  profile: RawCompanyProfile,
+  options?: FundingWorkspaceOptions,
+) {
+  if (!hasSupabaseServiceRoleEnv()) {
     return null;
   }
+
+  const supabase = getSupabaseAdminClient();
+  const pageSize = Math.max(1, options?.pageSize ?? 20);
+  const page = Math.max(1, options?.page ?? 1);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const baseSelect =
+    "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at";
+  const naicsSelect = `${baseSelect}, naics_codes`;
+
+  async function loadFeedItems({
+    includeNaicsColumn,
+    naicsKeywords,
+  }: {
+    includeNaicsColumn: boolean;
+    naicsKeywords: string[];
+  }) {
+    let query = supabase
+      .from("feed_items")
+      .select(includeNaicsColumn ? naicsSelect : baseSelect, { count: "exact" })
+      .order("updated_at", { ascending: false })
+      .order("title", { ascending: true });
+
+    if (naicsKeywords.length > 0) {
+      const orClauses = naicsKeywords.flatMap((keyword) => [
+        `title.ilike.%${keyword}%`,
+        `summary.ilike.%${keyword}%`,
+        `eligibility.ilike.%${keyword}%`,
+        `audience.ilike.%${keyword}%`,
+        `geography.ilike.%${keyword}%`,
+      ]);
+      query = query.or(orClauses.join(","));
+    }
+
+    return query.range(from, to);
+  }
+
+  const [sourcesResult, ingestionRunsResult] = await Promise.all([
+    supabase.from("official_sources").select(
+      "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
+    ),
+    supabase
+      .from("ingestion_runs")
+      .select(
+        "id, status, triggered_by, notes, sources_attempted, sources_succeeded, items_upserted, started_at, completed_at",
+      )
+      .order("started_at", { ascending: false })
+      .limit(1),
+  ]);
+
+  const naicsKeywords = getNaicsKeywords(profile.naicsCodes);
+  let itemsResult = await loadFeedItems({ includeNaicsColumn: true, naicsKeywords });
+  let canReadRemoteNaicsColumn = true;
+
+  if (isMissingColumnError(itemsResult.error, "naics_codes")) {
+    console.warn("Supabase feed_items is missing naics_codes. Falling back to inferred NAICS matching.");
+    canReadRemoteNaicsColumn = false;
+    itemsResult = await loadFeedItems({ includeNaicsColumn: false, naicsKeywords });
+  }
+
+  if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
+    throw new Error(
+      [
+        "Supabase feed read failed.",
+        sourcesResult.error ? `official_sources: ${sourcesResult.error.message}` : null,
+        itemsResult.error ? `feed_items: ${itemsResult.error.message}` : null,
+        ingestionRunsResult.error ? `ingestion_runs: ${ingestionRunsResult.error.message}` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
+
+  const remoteSources = ((sourcesResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
+  const remoteItems = ((itemsResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
+  const totalItems = itemsResult.count ?? remoteItems.length;
+  const sourceSeedMap = new Map(sourceSeeds.map((source) => [source.key, source]));
+  const sourceIdToKey = new Map(remoteSources.map((source) => [source.id, source.source_key as string]));
+
+  const sources = remoteSources.map((source) => {
+    const seed = sourceSeedMap.get(String(source.source_key));
+
+    return {
+      id: source.id as number | string,
+      sourceKey: String(source.source_key),
+      name: String(source.name),
+      url: String(source.base_url),
+      jurisdiction: String(source.jurisdiction),
+      interfaceType: String(source.interface_type),
+      programTypes: seed?.programTypes ?? [],
+      updateCadence: seed?.updateCadence ?? String(source.default_cadence ?? ""),
+      summary: seed?.summary ?? `${String(source.name)} official source.`,
+      lastSyncedAt:
+        source.last_success_at || source.last_synced_at
+          ? String(source.last_success_at ?? source.last_synced_at)
+          : null,
+    } satisfies RawSource;
+  });
+
+  const items = remoteItems.map((item) => {
+    const inferredNaicsCodes = inferNaicsCodesFromText(
+      [
+        String(item.title ?? ""),
+        String(item.summary ?? ""),
+        String(item.eligibility ?? ""),
+        String(item.audience ?? ""),
+        String(item.geography ?? ""),
+      ].join(" "),
+    );
+    const remoteNaicsCodes =
+      canReadRemoteNaicsColumn && "naics_codes" in item ? parseArray(item.naics_codes) : [];
+
+    return {
+      id: item.id as number | string,
+      itemKey: String(item.canonical_key),
+      sourceKey: sourceIdToKey.get(item.source_id) ?? "unknown-source",
+      title: String(item.title),
+      category: String(item.category),
+      jurisdiction: String(item.jurisdiction),
+      audience: String(item.audience ?? ""),
+      summary: String(item.summary ?? ""),
+      eligibility: String(item.eligibility ?? ""),
+      amount: item.amount ? String(item.amount) : null,
+      deadline: item.deadline ? String(item.deadline) : null,
+      geography: String(item.geography ?? ""),
+      status: String(item.status),
+      url: String(item.source_url),
+      keywords: parseArray(item.keywords),
+      tags: parseArray(item.tags),
+      naicsCodes: remoteNaicsCodes.length > 0 ? remoteNaicsCodes : inferredNaicsCodes,
+      updatedAt: String(item.updated_at ?? nowIso()),
+      createdAt: String(item.created_at ?? nowIso()),
+    };
+  }) satisfies RawFeedItem[];
+
+  const latestRun = ingestionRunsResult.data?.[0];
+  const lastIngestionRun = latestRun
+    ? ({
+        id: latestRun.id,
+        status: latestRun.status,
+        triggeredBy: latestRun.triggered_by,
+        notes: latestRun.notes ?? null,
+        sourcesUpserted: latestRun.sources_succeeded ?? latestRun.sources_attempted ?? 0,
+        itemsUpserted: latestRun.items_upserted ?? 0,
+        createdAt: latestRun.completed_at ?? latestRun.started_at ?? nowIso(),
+      } satisfies RawIngestionRun)
+    : null;
+
+  return { items, lastIngestionRun, sources, totalItems };
 }
 
 function getFeedItems(options?: FundingWorkspaceOptions) {
@@ -1384,7 +1377,7 @@ export async function getFundingWorkspaceData(
   const profile = profileOverride ?? getProfile();
   const page = Math.max(1, options?.page ?? 1);
   const pageSize = Math.max(1, options?.pageSize ?? 20);
-  const remoteWorkspace = await getSupabaseWorkspaceData({ page, pageSize });
+  const remoteWorkspace = await getSupabaseWorkspaceData(profile, { page, pageSize });
   const sources = remoteWorkspace?.sources ?? getSources();
   const baseItems = remoteWorkspace?.items ?? getFeedItems({ page, pageSize });
   const totalItems = remoteWorkspace?.totalItems ?? getFeedItemsCount();
