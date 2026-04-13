@@ -50,8 +50,10 @@ export async function POST() {
       return access.response;
     }
 
-    const refresh = await triggerDailyRefresh(`manual:${access.user.id}`);
     const profile = await getFundingProfileForUser(access.user.id);
+    const refresh = await triggerDailyRefresh(`manual:${access.user.id}`, {
+      naicsCodes: profile.naicsCodes,
+    });
     const { getFundingWorkspaceData } = await import("@/lib/feed");
     return NextResponse.json({
       refresh,

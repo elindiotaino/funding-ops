@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 
 import { getConfig } from "./config.js";
-import { runDailyRefresh, runItemDetailRefresh } from "./service.js";
+import { runDailyRefresh, runItemDetailRefresh, runScopedDailyRefresh } from "./service.js";
 
 function json(statusCode: number, payload: unknown) {
   return {
@@ -73,8 +73,26 @@ async function handleRequest(request: import("node:http").IncomingMessage) {
       typeof body.triggeredBy === "string" && body.triggeredBy.trim().length > 0
         ? body.triggeredBy
         : "manual";
+    const scopeRecord =
+      body.scope && typeof body.scope === "object"
+        ? (body.scope as Record<string, unknown>)
+        : null;
+    const scope =
+      scopeRecord
+        ? {
+            naicsCodes: Array.isArray(scopeRecord.naicsCodes)
+              ? scopeRecord.naicsCodes
+                  .filter((value): value is string => typeof value === "string")
+                  .map((value) => value.trim())
+                  .filter(Boolean)
+              : [],
+          }
+        : undefined;
 
-    const result = await runDailyRefresh(triggeredBy);
+    const result =
+      scope && scope.naicsCodes.length > 0
+        ? await runScopedDailyRefresh(triggeredBy, scope)
+        : await runDailyRefresh(triggeredBy);
     return json(200, result);
   }
 

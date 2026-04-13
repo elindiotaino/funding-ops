@@ -12,6 +12,10 @@ type DailyRefreshResponse = {
   }>;
 };
 
+type DailyRefreshScope = {
+  naicsCodes?: string[];
+};
+
 type ItemDetailRefreshResponse = {
   feedItemId: string;
   refreshedAt: string;
@@ -30,7 +34,7 @@ function getIngestConfig() {
   return { baseUrl, sharedSecret };
 }
 
-export async function triggerDailyRefresh(triggeredBy: string) {
+export async function triggerDailyRefresh(triggeredBy: string, scope?: DailyRefreshScope) {
   const { baseUrl, sharedSecret } = getIngestConfig();
   const response = await fetch(new URL("/jobs/daily-refresh", baseUrl), {
     method: "POST",
@@ -38,7 +42,7 @@ export async function triggerDailyRefresh(triggeredBy: string) {
       "content-type": "application/json",
       "x-ingest-secret": sharedSecret,
     },
-    body: JSON.stringify({ triggeredBy }),
+    body: JSON.stringify({ triggeredBy, scope }),
     cache: "no-store",
   });
 

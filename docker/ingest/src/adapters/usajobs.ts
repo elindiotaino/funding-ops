@@ -1,6 +1,6 @@
 import { fetchJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
-import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import type { AdapterRunResult, IngestedOpportunity, RefreshScope } from "../types.js";
 import { classifyNaicsCodes } from "./naics-classification.js";
 
 type USAJobsResponse = {
@@ -45,7 +45,10 @@ function getUsaJobsConfig() {
   };
 }
 
-export async function runUsaJobsAdapter(source: SourceDefinition): Promise<AdapterRunResult> {
+export async function runUsaJobsAdapter(
+  source: SourceDefinition,
+  scope?: RefreshScope,
+): Promise<AdapterRunResult> {
   const config = getUsaJobsConfig();
   if (!config.apiKey || !config.userAgent) {
     return {
@@ -62,6 +65,9 @@ export async function runUsaJobsAdapter(source: SourceDefinition): Promise<Adapt
   url.searchParams.set("SortField", "openingdate");
   url.searchParams.set("SortDirection", "Desc");
   url.searchParams.set("Fields", "Min");
+  if (scope?.keywords.length) {
+    url.searchParams.set("Keyword", scope.keywords.slice(0, 3).join(" "));
+  }
 
   const response = await fetchJson<USAJobsResponse>(url.toString(), {
     headers: {

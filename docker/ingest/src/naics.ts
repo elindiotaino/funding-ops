@@ -21,6 +21,8 @@ const NAICS_OPTIONS = [
   { code: "92", keywords: ["public administration", "government operations", "municipal", "agency", "public sector", "civic"] },
 ] as const;
 
+const naicsMap = new Map(NAICS_OPTIONS.map((option) => [option.code, option]));
+
 export function inferNaicsCodesFromText(text: string) {
   const normalized = text.toLowerCase();
   return NAICS_OPTIONS
@@ -28,4 +30,10 @@ export function inferNaicsCodesFromText(text: string) {
       option.keywords.some((keyword) => normalized.includes(keyword.toLowerCase())),
     )
     .map((option) => option.code);
+}
+
+export function getNaicsKeywords(codes: string[]) {
+  return Array.from(
+    new Set(codes.flatMap((code) => naicsMap.get(code as (typeof NAICS_OPTIONS)[number]["code"])?.keywords ?? [])),
+  );
 }

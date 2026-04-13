@@ -1,6 +1,6 @@
 import { postJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
-import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import type { AdapterRunResult, IngestedOpportunity, RefreshScope } from "../types.js";
 import { classifyNaicsCodes } from "./naics-classification.js";
 
 type GrantsGovSearchResponse = {
@@ -94,7 +94,11 @@ function toOpportunity(source: SourceDefinition, item: GrantsGovOpportunity): In
   };
 }
 
-export async function runGrantsGovAdapter(source: SourceDefinition): Promise<AdapterRunResult> {
+export async function runGrantsGovAdapter(
+  source: SourceDefinition,
+  scope?: RefreshScope,
+): Promise<AdapterRunResult> {
+  const keyword = scope?.keywords.slice(0, 4).join(" ") ?? "";
   const payload = {
     rows: 50,
     startRecordNum: 0,
@@ -102,7 +106,7 @@ export async function runGrantsGovAdapter(source: SourceDefinition): Promise<Ada
     agencies: "",
     fundingCategories: "",
     eligibilities: "",
-    keyword: "",
+    keyword,
     aln: "",
   };
 

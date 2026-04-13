@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 
 import { runSourceAdapter } from "./adapters/index.js";
-import { inferNaicsCodesFromText } from "./naics.js";
+import { getNaicsKeywords, inferNaicsCodesFromText } from "./naics.js";
 import { getSupabaseAdminClient } from "./supabase.js";
 import { sourceRegistry, type SourceDefinition } from "./source-registry.js";
-import type { IngestedOpportunity } from "./types.js";
+import type { IngestedOpportunity, RefreshScope } from "./types.js";
 
 type RunStatus = "running" | "success" | "partial" | "failed";
 
@@ -362,15 +362,21 @@ async function upsertItemsForSource(runId: string, sourceId: string, items: Inge
 
 export async function runDailyRefresh(triggeredBy = "manual") {
   await ensureSources();
-
   const runId = await createRun(triggeredBy);
   const results: SourceRunResult[] = [];
+  return runDailyRefreshWithState(runId, results);
+}
 
+async function runDailyRefreshWithState(
+  runId: string,
+  results: SourceRunResult[],
+  scope?: RefreshScope,
+) {
   for (const source of sourceRegistry) {
     const sourceId = await fetchSourceRecord(source.key);
 
     try {
-      const result = await runSourceAdapter(source);
+      const result = await runSourceAdapter(source, scope);
       if (result.status === "skipped") {
         const sourceResult: SourceRunResult = {
           sourceKey: source.key,
@@ -427,6 +433,26 @@ export async function runDailyRefresh(triggeredBy = "manual") {
     status,
     results
   };
+}
+
+export async function runScopedDailyRefresh(
+  triggeredBy = "manual",
+  inputScope?: { naicsCodes?: string[] | null },
+) {
+  const scope: RefreshScope | undefined =
+    inputScope?.naicsCodes && inputScope.naicsCodes.length > 0
+      ? {
+          naicsCodes: Array.from(new Set(inputScope.naicsCodes.map((code) => code.trim()).filter(Boolean))),
+          keywords: getNaicsKeywords(inputScope.naicsCodes),
+        }
+      : undefined;
+
+  await ensureSources();
+  const runId = await createRun(
+    scope ? `${triggeredBy}:naics:${scope.naicsCodes.join("|")}` : triggeredBy,
+  );
+  const results: SourceRunResult[] = [];
+  return runDailyRefreshWithState(runId, results, scope);
 }
 
 export async function runItemDetailRefresh(feedItemId: string) {

@@ -20,6 +20,11 @@ export type IngestedOpportunity = {
   detailPayload?: Record<string, unknown> | null;
 };
 
+export type RefreshScope = {
+  naicsCodes: string[];
+  keywords: string[];
+};
+
 export type AdapterRunResult =
   | {
       status: "success";
