@@ -142,6 +142,7 @@ You must also provide the shared Supabase env vars used by the hub, because this
 For scheduled refreshes in Vercel, set:
 
 - `CRON_SECRET` for the daily cron request to `/api/feed-refresh`
+- `INGEST_SERVICE_BASE_URL` and `INGEST_SHARED_SECRET` so the web app can delegate refresh work to `funding-ops-ingest`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, and `SMTP_PASS` for outbound SMTP delivery
 - `NOTIFICATION_FROM_EMAIL` for the sender address used in daily summary emails
 

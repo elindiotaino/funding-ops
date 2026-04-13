@@ -56,6 +56,7 @@ Recommended split:
 - Vercel hosts the Next.js app
 - Docker hosts `funding-ops-ingest`
 - Supabase stores the feed, run history, and item details
+- the Next.js app delegates refresh actions to the ingest service through a server-side internal call
 
 For Windows hosts, use:
 
@@ -71,6 +72,7 @@ docker compose up --build funding-ops-ingest
 
 Scheduler options:
 
+- Vercel cron calling `/api/feed-refresh`, which then delegates to the ingest service
 - Windows Task Scheduler calling `POST /jobs/daily-refresh`
 - host cron on a Linux Docker machine
 - an external trusted scheduler calling the same internal endpoint
@@ -79,3 +81,19 @@ The service contract and schema live in:
 
 - `docs/docker-supabase-architecture.md`
 - `docs/supabase-feed-schema.sql`
+
+## Web-to-ingest env contract
+
+The web app needs these server-side env vars to delegate refresh work:
+
+- `INGEST_SERVICE_BASE_URL`
+- `INGEST_SHARED_SECRET`
+
+Recommended local value:
+
+```powershell
+INGEST_SERVICE_BASE_URL=http://127.0.0.1:8787
+```
+
+The web app should never perform canonical ingestion work itself in production.
+Manual refresh and cron should both call the ingest service instead of reseeding local data.
