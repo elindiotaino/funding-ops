@@ -28,6 +28,7 @@ function loadEnvFile(filePath) {
 }
 
 loadEnvFile(path.resolve(process.cwd(), ".env.local"));
+loadEnvFile(path.resolve(process.cwd(), ".env.docker"));
 loadEnvFile(path.resolve(process.cwd(), ".env"));
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -53,6 +54,7 @@ const requiredTables = [
   { table: "feed_items", select: "id,canonical_key" },
   { table: "feed_item_snapshots", select: "id,snapshot_date" },
   { table: "feed_item_details", select: "id,detail_status" },
+  { table: "funding_ops_user_profiles", select: "profile_id,company_name" },
 ];
 
 const results = [];

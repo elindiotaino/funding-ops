@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { canCurrentUserAccessFundingOps } from "@/lib/auth/access";
 import { getFundingWorkspaceData, initializeFundingFeed } from "@/lib/feed";
+import { getFundingProfileForUser } from "@/lib/funding-profile";
 import { getDashboardData } from "@/lib/queries";
 import { hasSupabaseAuthEnv } from "@/lib/supabase/env";
 import { bootstrapDatabase } from "@/db/bootstrap";
@@ -31,12 +32,13 @@ export async function getFundingAppPageData(options?: { page?: number; pageSize?
 
   bootstrapDatabase();
   initializeFundingFeed();
+  const profile = await getFundingProfileForUser(access.user.id);
 
   return {
     appUrl,
     basePath,
     hubUrl,
-    workspace: await getFundingWorkspaceData(options),
+    workspace: await getFundingWorkspaceData(options, profile),
     dashboard: getDashboardData(),
   };
 }

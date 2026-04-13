@@ -75,6 +75,7 @@ New files added for issue `#6`:
 - `docker-compose.yml`
 - `docker/ingest/`
 - `docs/docker-supabase-architecture.md`
+- `docs/shared-account-model.md`
 - `docs/supabase-feed-schema.sql`
 - `docs/supabase-migration-workflow.md`
 - `docs/docker-local-operations.md`
@@ -106,6 +107,7 @@ docker compose up --build funding-ops-ingest
 
 Read the full design in `docs/docker-supabase-architecture.md`.
 Use `docs/docker-local-operations.md` for the day-to-day local Docker workflow.
+Use `docs/shared-account-model.md` for the canonical identity, access, and provider-linking model that unblocks per-user Funding Ops settings.
 
 ## Supabase migration workflow
 

@@ -32,7 +32,7 @@ type FeedItemSeed = {
   tags: string[];
 };
 
-type CompanyProfileInput = {
+export type CompanyProfileInput = {
   companyName: string;
   companySummary: string;
   geography: string;
@@ -48,7 +48,7 @@ type CompanyProfileInput = {
   emailTags: string[];
 };
 
-type RawCompanyProfile = CompanyProfileInput & {
+export type RawCompanyProfile = CompanyProfileInput & {
   id: number;
   updatedAt: string;
   lastDailySummaryAt: string | null;
@@ -146,7 +146,7 @@ type FundingWorkspaceOptions = {
   pageSize?: number;
 };
 
-const defaultProfile: CompanyProfileInput = {
+export const defaultProfile: CompanyProfileInput = {
   companyName: "Puerto Rico Opportunity Desk",
   companySummary:
     "Small organization seeking grants, assistance programs, jobs, incentives, and recovery opportunities relevant to Puerto Rico operations.",
@@ -915,6 +915,22 @@ function getNotifications() {
   })) satisfies RawNotification[];
 }
 
+function buildNotificationsForProfile(items: ScoredItem[], profile: RawCompanyProfile) {
+  return items
+    .filter((item) => item.relevanceScore >= 45)
+    .slice(0, 12)
+    .map((item, index) => ({
+      id: index + 1,
+      itemKey: item.itemKey,
+      title: item.title,
+      message: `${item.title} aligns with ${profile.companyName || "your tracked profile"} and is worth reviewing in the feed.`,
+      relevanceScore: item.relevanceScore,
+      reasons: item.reasons,
+      createdAt: item.updatedAt,
+      readAt: null,
+    })) satisfies RawNotification[];
+}
+
 function getLastIngestionRun() {
   const row = sqlite
     .prepare(`
@@ -1301,9 +1317,9 @@ function startOfUtcDay(value: string) {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`).getTime();
 }
 
-export async function getDailySummaryEmailPayload() {
-  const profile = getProfile();
-  const items = (await getFundingWorkspaceData()).items
+export async function getDailySummaryEmailPayload(profileOverride?: RawCompanyProfile) {
+  const profile = profileOverride ?? getProfile();
+  const items = (await getFundingWorkspaceData(undefined, profile)).items
     .filter((item) => item.relevanceScore >= 55)
     .filter((item) => matchesEmailPreferences(item, profile))
     .slice(0, 5);
@@ -1361,8 +1377,11 @@ export function markDailySummarySent() {
     .run();
 }
 
-export async function getFundingWorkspaceData(options?: FundingWorkspaceOptions) {
-  const profile = getProfile();
+export async function getFundingWorkspaceData(
+  options?: FundingWorkspaceOptions,
+  profileOverride?: RawCompanyProfile,
+) {
+  const profile = profileOverride ?? getProfile();
   const page = Math.max(1, options?.page ?? 1);
   const pageSize = Math.max(1, options?.pageSize ?? 20);
   const remoteWorkspace = await getSupabaseWorkspaceData({ page, pageSize });

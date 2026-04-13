@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
+import { getFundingProfileForUser } from "@/lib/funding-profile";
 
 function isCronAuthorized(request: Request) {
   const configuredSecret = process.env.CRON_SECRET?.trim();
@@ -20,9 +21,7 @@ export async function GET(request: Request) {
 
     const { bootstrapDatabase } = await import("@/db/bootstrap");
     const {
-      getDailySummaryEmailPayload,
       initializeFundingFeed,
-      markDailySummarySent,
       refreshFundingFeed,
     } = await import("@/lib/feed");
 
@@ -30,23 +29,15 @@ export async function GET(request: Request) {
     initializeFundingFeed();
 
     const workspace = await refreshFundingFeed("cron");
-    const summary = await getDailySummaryEmailPayload();
-
-    if (!summary.shouldSend) {
-      return NextResponse.json({ workspace, dailySummary: summary });
-    }
-
-    const { sendDailySummaryEmail } = await import("@/lib/email");
-    const emailResult = await sendDailySummaryEmail(summary.payload);
-    if (emailResult.sent) {
-      markDailySummarySent();
-    }
 
     return NextResponse.json({
       workspace,
-      dailySummary: emailResult.sent
-        ? { sent: true }
-        : { sent: false, skipped: emailResult.skipped, reason: emailResult.reason },
+      dailySummary: {
+        sent: false,
+        skipped: true,
+        reason:
+          "Daily summary email is skipped in cron until per-user shared profile delivery is implemented.",
+      },
     });
   } catch (error) {
     console.error("Funding Ops cron refresh failed:", error);
@@ -73,8 +64,10 @@ export async function POST() {
       return access.response;
     }
 
-    const workspace = await refreshFundingFeed("manual");
-    return NextResponse.json({ workspace });
+    await refreshFundingFeed("manual");
+    const profile = await getFundingProfileForUser(access.user.id);
+    const { getFundingWorkspaceData } = await import("@/lib/feed");
+    return NextResponse.json({ workspace: await getFundingWorkspaceData(undefined, profile) });
   } catch (error) {
     console.error("Funding Ops manual refresh failed:", error);
     return NextResponse.json(

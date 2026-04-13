@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { bootstrapDatabase } from "@/db/bootstrap";
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
-import { initializeFundingFeed, saveCompanyProfile } from "@/lib/feed";
+import { getFundingWorkspaceData, initializeFundingFeed } from "@/lib/feed";
+import { saveFundingProfileForUser } from "@/lib/funding-profile";
 
 const profileSchema = z.object({
   companyName: z.string().trim().min(1),
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const workspace = await saveCompanyProfile(payload.data);
+  const profile = await saveFundingProfileForUser(access.user.id, payload.data);
+  const workspace = await getFundingWorkspaceData(undefined, profile);
   return NextResponse.json({ workspace });
 }
