@@ -375,6 +375,11 @@ export function FundingOpsOpportunitiesView({
                 ? `${workspace.profile.naicsCodes.length} profile NAICS active`
                 : "No profile NAICS restriction"}
             </span>
+            <span>
+              {workspace.refreshScope.naicsCodes.length > 0
+                ? `Refresh scoped to ${workspace.refreshScope.naicsCodes.length} NAICS codes`
+                : "Refresh currently broad"}
+            </span>
             <span>{isBrowsingHistory ? "Loading history..." : "History ready"}</span>
             <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
           </div>

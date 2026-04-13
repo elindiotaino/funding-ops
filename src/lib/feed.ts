@@ -120,6 +120,9 @@ export type FundingWorkspaceData = {
   items: ScoredItem[];
   notifications: RawNotification[];
   profile: RawCompanyProfile;
+  refreshScope: {
+    naicsCodes: string[];
+  };
   filters: {
     categories: string[];
     jurisdictions: string[];
@@ -1494,6 +1497,9 @@ export async function getFundingWorkspaceData(
     items: paginatedItems,
     notifications,
     profile,
+    refreshScope: {
+      naicsCodes: profile.naicsCodes,
+    },
     filters: {
       categories,
       jurisdictions,

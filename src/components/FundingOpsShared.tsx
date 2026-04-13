@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import type { FundingWorkspaceData } from "@/lib/feed";
+import { formatNaicsLabel } from "@/lib/naics";
 
 export type FilterState = {
   query: string;
@@ -144,6 +145,12 @@ export function WorkspaceNotices({
           {workspace.lastIngestionRun.triggeredBy}. Imported{" "}
           {workspace.lastIngestionRun.itemsUpserted} feed records across{" "}
           {workspace.lastIngestionRun.sourcesUpserted} official sources.
+          {workspace.refreshScope.naicsCodes.length > 0
+            ? ` Active account NAICS scope: ${workspace.refreshScope.naicsCodes
+                .slice(0, 6)
+                .map((code) => formatNaicsLabel(code))
+                .join(", ")}${workspace.refreshScope.naicsCodes.length > 6 ? ", ..." : ""}.`
+            : " Refresh scope is broad because no account NAICS codes are selected."}
         </p>
       ) : null}
       {message ? <p className="notice success">{message}</p> : null}

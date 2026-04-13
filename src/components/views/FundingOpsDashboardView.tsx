@@ -100,6 +100,10 @@ export function FundingOpsDashboardView({
           <span>Open Tasks</span>
           <strong>{initialDashboard.metrics.pendingTasks}</strong>
         </div>
+        <div className="stat-card">
+          <span>Refresh Scope</span>
+          <strong>{workspace.refreshScope.naicsCodes.length > 0 ? workspace.refreshScope.naicsCodes.length : "All"}</strong>
+        </div>
       </section>
 
       <WorkspaceNotices error={error} message={message} workspace={workspace} />
