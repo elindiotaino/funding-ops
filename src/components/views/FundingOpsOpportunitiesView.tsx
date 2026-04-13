@@ -1,6 +1,7 @@
 "use client";
 
 import type { Route } from "next";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { FundingWorkspaceData } from "@/lib/feed";
 import { formatNaicsLabel } from "@/lib/naics";
@@ -15,7 +16,7 @@ import {
   useWorkspaceFilters,
   WorkspaceNotices,
 } from "@/components/FundingOpsShared";
-import { useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 
 type OpportunitiesViewProps = {
   appUrl: string;
@@ -35,10 +36,58 @@ export function FundingOpsOpportunitiesView({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBrowsingHistory, setIsBrowsingHistory] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const filteredItems = useWorkspaceFilters(workspace, filters);
   const currentPage = workspace.pagination.page;
   const totalPages = workspace.pagination.totalPages;
   const totalItems = workspace.pagination.totalItems;
+  const sourceOptions = useMemo(
+    () => workspace.sources.map((source) => source.sourceKey),
+    [workspace.sources],
+  );
+  const sourceLabelMap = useMemo(
+    () => new Map(workspace.sources.map((source) => [source.sourceKey, source.name])),
+    [workspace.sources],
+  );
+
+  useEffect(() => {
+    setIsBrowsingHistory(false);
+  }, [workspace.history.selectedSnapshotDate, workspace.history.selectedSourceKeys, workspace.pagination.page]);
+
+  function updateHistoryRoute(next: { snapshotDate?: string | null; sourceKeys?: string[]; page?: number }) {
+    const params = new URLSearchParams(searchParams.toString());
+    const snapshotDate =
+      next.snapshotDate === undefined ? workspace.history.selectedSnapshotDate : next.snapshotDate;
+    const sourceKeys =
+      next.sourceKeys === undefined ? workspace.history.selectedSourceKeys : next.sourceKeys;
+    const page = next.page ?? 1;
+
+    if (snapshotDate) {
+      params.set("date", snapshotDate);
+    } else {
+      params.delete("date");
+    }
+
+    if (sourceKeys.length > 0) {
+      params.set("sources", sourceKeys.join(","));
+    } else {
+      params.delete("sources");
+    }
+
+    if (page > 1) {
+      params.set("page", String(page));
+    } else {
+      params.delete("page");
+    }
+
+    setIsBrowsingHistory(true);
+    startTransition(() => {
+      const query = params.toString();
+      router.push((query ? `/opportunities?${query}` : "/opportunities") as Route);
+    });
+  }
 
   async function handleRefresh() {
     setIsRefreshing(true);
@@ -84,11 +133,17 @@ export function FundingOpsOpportunitiesView({
           <div>
             <p className="eyebrow">Search And Filters</p>
             <h2>Filter by keyword, type, region, NAICS, and tags without digging through every source.</h2>
+            <p className="ranked-item__summary">
+              Daily history is loaded from stored snapshots. Source and day filters apply before pagination.
+            </p>
           </div>
           <button
             type="button"
             className="secondary-link"
-            onClick={() => setFilters(initialFilters)}
+            onClick={() => {
+              setFilters(initialFilters);
+              updateHistoryRoute({ snapshotDate: null, sourceKeys: [], page: 1 });
+            }}
           >
             Clear Filters
           </button>
@@ -121,6 +176,31 @@ export function FundingOpsOpportunitiesView({
         </div>
 
         <div className="filter-groups">
+          <SelectionGroup
+            label="Snapshot days"
+            options={workspace.history.availableSnapshotDates}
+            selected={workspace.history.selectedSnapshotDate ? [workspace.history.selectedSnapshotDate] : []}
+            onToggle={(value) =>
+              updateHistoryRoute({
+                snapshotDate:
+                  workspace.history.selectedSnapshotDate === value ? null : value,
+                page: 1,
+              })
+            }
+            emptyCopy="No stored daily snapshots yet."
+          />
+          <SelectionGroup
+            label="Official sources"
+            options={sourceOptions}
+            selected={workspace.history.selectedSourceKeys}
+            onToggle={(value) =>
+              updateHistoryRoute({
+                sourceKeys: toggleSelection(workspace.history.selectedSourceKeys, value),
+                page: 1,
+              })
+            }
+            formatOptionLabel={(value) => sourceLabelMap.get(value) ?? value}
+          />
           {workspace.profile.naicsCodes.length > 0 ? (
             <div className="selection-group">
               <div className="selection-group__header">
@@ -195,10 +275,21 @@ export function FundingOpsOpportunitiesView({
             <span>{filteredItems.length} shown on this page</span>
             <span>{totalItems} total in database</span>
             <span>
+              {workspace.history.selectedSnapshotDate
+                ? `Snapshot ${workspace.history.selectedSnapshotDate}`
+                : "Latest snapshot"}
+            </span>
+            <span>
+              {workspace.history.selectedSourceKeys.length > 0
+                ? `${workspace.history.selectedSourceKeys.length} source filters active`
+                : "All sources"}
+            </span>
+            <span>
               {workspace.profile.naicsCodes.length > 0
                 ? `${workspace.profile.naicsCodes.length} profile NAICS active`
                 : "No profile NAICS restriction"}
             </span>
+            <span>{isBrowsingHistory ? "Loading history..." : "History ready"}</span>
             <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
           </div>
         </div>
@@ -262,7 +353,11 @@ export function FundingOpsOpportunitiesView({
             {currentPage > 1 ? (
               <Link
                 className="secondary-link"
-                href={`/opportunities?page=${currentPage - 1}` as Route}
+                href={`/opportunities?${(() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("page", String(currentPage - 1));
+                  return params.toString();
+                })()}` as Route}
               >
                 Previous Page
               </Link>
@@ -272,7 +367,11 @@ export function FundingOpsOpportunitiesView({
             {currentPage < totalPages ? (
               <Link
                 className="secondary-link"
-                href={`/opportunities?page=${currentPage + 1}` as Route}
+                href={`/opportunities?${(() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("page", String(currentPage + 1));
+                  return params.toString();
+                })()}` as Route}
               >
                 Next Page
               </Link>

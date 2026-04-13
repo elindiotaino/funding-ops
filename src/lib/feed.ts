@@ -126,6 +126,11 @@ export type FundingWorkspaceData = {
     tags: string[];
     naicsCodes: string[];
   };
+  history: {
+    availableSnapshotDates: string[];
+    selectedSnapshotDate: string | null;
+    selectedSourceKeys: string[];
+  };
   metrics: {
     totalSources: number;
     totalItems: number;
@@ -145,6 +150,8 @@ export type FundingWorkspaceData = {
 type FundingWorkspaceOptions = {
   page?: number;
   pageSize?: number;
+  snapshotDate?: string;
+  sourceKeys?: string[];
 };
 
 export const defaultProfile: CompanyProfileInput = {
@@ -662,42 +669,11 @@ async function getSupabaseWorkspaceData(
   }
 
   const supabase = getSupabaseAdminClient();
-  const pageSize = Math.max(1, options?.pageSize ?? 20);
-  const page = Math.max(1, options?.page ?? 1);
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
   const baseSelect =
     "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, updated_at, created_at";
   const naicsSelect = `${baseSelect}, naics_codes`;
 
-  async function loadFeedItems({
-    includeNaicsColumn,
-    naicsKeywords,
-  }: {
-    includeNaicsColumn: boolean;
-    naicsKeywords: string[];
-  }) {
-    let query = supabase
-      .from("feed_items")
-      .select(includeNaicsColumn ? naicsSelect : baseSelect, { count: "exact" })
-      .order("updated_at", { ascending: false })
-      .order("title", { ascending: true });
-
-    if (naicsKeywords.length > 0) {
-      const orClauses = naicsKeywords.flatMap((keyword) => [
-        `title.ilike.%${keyword}%`,
-        `summary.ilike.%${keyword}%`,
-        `eligibility.ilike.%${keyword}%`,
-        `audience.ilike.%${keyword}%`,
-        `geography.ilike.%${keyword}%`,
-      ]);
-      query = query.or(orClauses.join(","));
-    }
-
-    return query.range(from, to);
-  }
-
-  const [sourcesResult, ingestionRunsResult] = await Promise.all([
+  const [sourcesResult, ingestionRunsResult, snapshotDatesResult] = await Promise.all([
     supabase.from("official_sources").select(
       "id, source_key, name, base_url, jurisdiction, interface_type, default_cadence, last_synced_at, last_success_at",
     ),
@@ -705,28 +681,23 @@ async function getSupabaseWorkspaceData(
       .from("ingestion_runs")
       .select(
         "id, status, triggered_by, notes, sources_attempted, sources_succeeded, items_upserted, started_at, completed_at",
-      )
+        )
       .order("started_at", { ascending: false })
       .limit(1),
+    supabase
+      .from("feed_item_snapshots")
+      .select("snapshot_date")
+      .order("snapshot_date", { ascending: false })
+      .limit(90),
   ]);
 
-  const naicsKeywords = getNaicsKeywords(profile.naicsCodes);
-  let itemsResult = await loadFeedItems({ includeNaicsColumn: true, naicsKeywords });
-  let canReadRemoteNaicsColumn = true;
-
-  if (isMissingColumnError(itemsResult.error, "naics_codes")) {
-    console.warn("Supabase feed_items is missing naics_codes. Falling back to inferred NAICS matching.");
-    canReadRemoteNaicsColumn = false;
-    itemsResult = await loadFeedItems({ includeNaicsColumn: false, naicsKeywords });
-  }
-
-  if (sourcesResult.error || itemsResult.error || ingestionRunsResult.error) {
+  if (sourcesResult.error || ingestionRunsResult.error || snapshotDatesResult.error) {
     throw new Error(
       [
         "Supabase feed read failed.",
         sourcesResult.error ? `official_sources: ${sourcesResult.error.message}` : null,
-        itemsResult.error ? `feed_items: ${itemsResult.error.message}` : null,
         ingestionRunsResult.error ? `ingestion_runs: ${ingestionRunsResult.error.message}` : null,
+        snapshotDatesResult.error ? `feed_item_snapshots: ${snapshotDatesResult.error.message}` : null,
       ]
         .filter(Boolean)
         .join(" "),
@@ -734,10 +705,23 @@ async function getSupabaseWorkspaceData(
   }
 
   const remoteSources = ((sourcesResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
-  const remoteItems = ((itemsResult.data ?? []) as unknown) as Array<Record<string, unknown>>;
-  const totalItems = itemsResult.count ?? remoteItems.length;
   const sourceSeedMap = new Map(sourceSeeds.map((source) => [source.key, source]));
   const sourceIdToKey = new Map(remoteSources.map((source) => [source.id, source.source_key as string]));
+  const sourceKeyToId = new Map(remoteSources.map((source) => [String(source.source_key), String(source.id)]));
+  const availableSnapshotDates = Array.from(
+    new Set(
+      ((snapshotDatesResult.data ?? []) as Array<{ snapshot_date?: string | null }>)
+        .map((row) => row.snapshot_date)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
+  const selectedSnapshotDate =
+    options?.snapshotDate && availableSnapshotDates.includes(options.snapshotDate)
+      ? options.snapshotDate
+      : availableSnapshotDates[0] ?? null;
+  const selectedSourceKeys = Array.from(
+    new Set((options?.sourceKeys ?? []).map((value) => value.trim()).filter(Boolean)),
+  ).filter((sourceKey) => sourceKeyToId.has(sourceKey));
 
   const sources = remoteSources.map((source) => {
     const seed = sourceSeedMap.get(String(source.source_key));
@@ -756,8 +740,88 @@ async function getSupabaseWorkspaceData(
         source.last_success_at || source.last_synced_at
           ? String(source.last_success_at ?? source.last_synced_at)
           : null,
-    } satisfies RawSource;
+      } satisfies RawSource;
   });
+
+  let snapshotFeedItemIds: string[] | null = null;
+  if (selectedSnapshotDate) {
+    const { data: snapshotRows, error: snapshotRowsError } = await supabase
+      .from("feed_item_snapshots")
+      .select("feed_item_id")
+      .eq("snapshot_date", selectedSnapshotDate);
+
+    if (snapshotRowsError) {
+      throw new Error(`Supabase snapshot lookup failed. feed_item_snapshots: ${snapshotRowsError.message}`);
+    }
+
+    snapshotFeedItemIds = Array.from(
+      new Set(
+        ((snapshotRows ?? []) as Array<{ feed_item_id?: string | null }>)
+          .map((row) => row.feed_item_id)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+  }
+
+  async function loadFeedItemsByIds(includeNaicsColumn: boolean, feedItemIds: string[]) {
+    const chunkSize = 500;
+    const rows: Array<Record<string, unknown>> = [];
+
+    for (let index = 0; index < feedItemIds.length; index += chunkSize) {
+      const chunk = feedItemIds.slice(index, index + chunkSize);
+      const { data, error } = await supabase
+        .from("feed_items")
+        .select(includeNaicsColumn ? naicsSelect : baseSelect)
+        .in("id", chunk);
+
+      if (error) {
+        return { data: null, error };
+      }
+
+      rows.push(...(((data ?? []) as unknown) as Array<Record<string, unknown>>));
+    }
+
+    return { data: rows, error: null };
+  }
+
+  let canReadRemoteNaicsColumn = true;
+  let remoteItemsResult =
+    snapshotFeedItemIds && snapshotFeedItemIds.length > 0
+      ? await loadFeedItemsByIds(true, snapshotFeedItemIds)
+      : { data: [] as Array<Record<string, unknown>>, error: null as { message?: string } | null };
+
+  if (isMissingColumnError(remoteItemsResult.error, "naics_codes")) {
+    console.warn("Supabase feed_items is missing naics_codes. Falling back to inferred NAICS matching.");
+    canReadRemoteNaicsColumn = false;
+    remoteItemsResult =
+      snapshotFeedItemIds && snapshotFeedItemIds.length > 0
+        ? await loadFeedItemsByIds(false, snapshotFeedItemIds)
+        : { data: [] as Array<Record<string, unknown>>, error: null as { message?: string } | null };
+  }
+
+  if (remoteItemsResult.error) {
+    throw new Error(`Supabase feed read failed. feed_items: ${remoteItemsResult.error.message}`);
+  }
+
+  const remoteItems = (((remoteItemsResult.data ?? []) as unknown) as Array<Record<string, unknown>>)
+    .filter((item) => {
+      if (selectedSourceKeys.length === 0) {
+        return true;
+      }
+
+      const sourceKey = sourceIdToKey.get(item.source_id);
+      return sourceKey ? selectedSourceKeys.includes(sourceKey) : false;
+    })
+    .sort((a, b) => {
+      const updatedAtDiff =
+        new Date(String(b.updated_at ?? nowIso())).getTime() -
+        new Date(String(a.updated_at ?? nowIso())).getTime();
+      if (updatedAtDiff !== 0) {
+        return updatedAtDiff;
+      }
+
+      return String(a.title ?? "").localeCompare(String(b.title ?? ""));
+    });
 
   const items = remoteItems.map((item) => {
     const inferredNaicsCodes = inferNaicsCodesFromText(
@@ -808,7 +872,15 @@ async function getSupabaseWorkspaceData(
       } satisfies RawIngestionRun)
     : null;
 
-  return { items, lastIngestionRun, sources, totalItems };
+  return {
+    availableSnapshotDates,
+    items,
+    lastIngestionRun,
+    selectedSnapshotDate,
+    selectedSourceKeys,
+    sources,
+    totalItems: items.length,
+  };
 }
 
 function getFeedItems(options?: FundingWorkspaceOptions) {
@@ -1379,10 +1451,12 @@ export async function getFundingWorkspaceData(
   const page = Math.max(1, options?.page ?? 1);
   const pageSize = Math.max(1, options?.pageSize ?? 20);
   const remoteWorkspace = await getSupabaseWorkspaceData(profile, { page, pageSize });
+  const sqliteTotalItems = remoteWorkspace ? 0 : getFeedItemsCount();
   const sources = remoteWorkspace?.sources ?? getSources();
-  const baseItems = remoteWorkspace?.items ?? getFeedItems({ page, pageSize });
-  const totalItems = remoteWorkspace?.totalItems ?? getFeedItemsCount();
-  const items = baseItems
+  const baseItems =
+    remoteWorkspace?.items ??
+    getFeedItems({ page: 1, pageSize: Math.max(pageSize, sqliteTotalItems || pageSize) });
+  const scopedItems = (remoteWorkspace?.items ?? baseItems)
     .map((item) => {
       const scored = scoreItem(item, profile);
       return {
@@ -1397,25 +1471,27 @@ export async function getFundingWorkspaceData(
         item.naicsCodes.some((code) => profile.naicsCodes.includes(code)),
     )
     .sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
-  const notifications = buildNotifications(items, profile);
+  const totalItems = scopedItems.length;
+  const paginatedItems = scopedItems.slice((page - 1) * pageSize, page * pageSize);
+  const notifications = buildNotifications(paginatedItems, profile);
 
-  const allTags = Array.from(new Set(items.flatMap((item) => item.tags))).sort((a, b) =>
+  const allTags = Array.from(new Set(scopedItems.flatMap((item) => item.tags))).sort((a, b) =>
     a.localeCompare(b),
   );
-  const categories = Array.from(new Set(items.map((item) => item.category))).sort((a, b) =>
+  const categories = Array.from(new Set(scopedItems.map((item) => item.category))).sort((a, b) =>
     a.localeCompare(b),
   );
-  const jurisdictions = Array.from(new Set(items.map((item) => item.jurisdiction))).sort((a, b) =>
-    a.localeCompare(b),
+  const jurisdictions = Array.from(new Set(scopedItems.map((item) => item.jurisdiction))).sort(
+    (a, b) => a.localeCompare(b),
   );
-  const naicsCodes = Array.from(new Set(items.flatMap((item) => item.naicsCodes))).sort((a, b) =>
+  const naicsCodes = Array.from(new Set(scopedItems.flatMap((item) => item.naicsCodes))).sort((a, b) =>
     a.localeCompare(b),
   );
   const lastIngestionRun = remoteWorkspace?.lastIngestionRun ?? getLastIngestionRun();
 
   return {
     sources,
-    items,
+    items: paginatedItems,
     notifications,
     profile,
     filters: {
@@ -1424,11 +1500,16 @@ export async function getFundingWorkspaceData(
       tags: allTags,
       naicsCodes,
     },
+    history: {
+      availableSnapshotDates: remoteWorkspace?.availableSnapshotDates ?? [],
+      selectedSnapshotDate: remoteWorkspace?.selectedSnapshotDate ?? null,
+      selectedSourceKeys: remoteWorkspace?.selectedSourceKeys ?? [],
+    },
     metrics: {
       totalSources: sources.length,
       totalItems,
       totalNotifications: notifications.length,
-      highlyRelevantItems: items.filter((item) => item.relevanceScore >= 55).length,
+      highlyRelevantItems: scopedItems.filter((item) => item.relevanceScore >= 55).length,
       sourcesDueForRefresh: sources.filter((source) => !source.lastSyncedAt).length,
     },
     pagination: {

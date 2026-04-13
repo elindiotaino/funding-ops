@@ -7,13 +7,19 @@ export const dynamic = "force-dynamic";
 export default async function OpportunitiesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; date?: string; sources?: string }>;
 }) {
   const params = await searchParams;
   const page = Number.parseInt(params.page ?? "1", 10);
+  const sourceKeys = (params.sources ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   const data = await getFundingAppPageData({
     page: Number.isFinite(page) && page > 0 ? page : 1,
     pageSize: 20,
+    snapshotDate: params.date?.trim() || undefined,
+    sourceKeys,
   });
 
   return (
