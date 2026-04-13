@@ -16,6 +16,7 @@ export type IngestedOpportunity = {
   publishedAt?: string | null;
   keywords: string[];
   tags: string[];
+  naicsCodes?: string[];
   detailPayload?: Record<string, unknown> | null;
 };
 

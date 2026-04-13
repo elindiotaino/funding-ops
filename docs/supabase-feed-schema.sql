@@ -64,6 +64,7 @@ create table if not exists public.feed_items (
   last_seen_at timestamptz not null default now(),
   last_changed_at timestamptz not null default now(),
   content_hash text not null,
+  naics_codes jsonb not null default '[]'::jsonb,
   keywords jsonb not null default '[]'::jsonb,
   tags jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),

@@ -51,10 +51,10 @@ const requiredTables = [
   { table: "official_sources", select: "id,source_key" },
   { table: "ingestion_runs", select: "id,status" },
   { table: "ingestion_run_sources", select: "id,status" },
-  { table: "feed_items", select: "id,canonical_key" },
+  { table: "feed_items", select: "id,canonical_key,naics_codes" },
   { table: "feed_item_snapshots", select: "id,snapshot_date" },
   { table: "feed_item_details", select: "id,detail_status" },
-  { table: "funding_ops_user_profiles", select: "profile_id,company_name" },
+  { table: "funding_ops_user_profiles", select: "profile_id,company_name,naics_codes" },
 ];
 
 const results = [];

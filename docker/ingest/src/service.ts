@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { runSourceAdapter } from "./adapters/index.js";
+import { inferNaicsCodesFromText } from "./naics.js";
 import { getSupabaseAdminClient } from "./supabase.js";
 import { sourceRegistry, type SourceDefinition } from "./source-registry.js";
 import type { IngestedOpportunity } from "./types.js";
@@ -161,6 +162,26 @@ function buildDetailPayload(item: IngestedOpportunity) {
   };
 }
 
+function buildCanonicalNaicsCodes(item: IngestedOpportunity) {
+  if (item.naicsCodes && item.naicsCodes.length > 0) {
+    return Array.from(new Set(item.naicsCodes.map((code) => code.trim()).filter(Boolean)));
+  }
+
+  return inferNaicsCodesFromText(
+    [
+      item.title,
+      item.summary,
+      item.eligibility,
+      item.audience,
+      item.geography,
+      ...item.keywords,
+      ...item.tags,
+    ]
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .join(" "),
+  );
+}
+
 async function upsertItemsForSource(runId: string, sourceId: string, items: IngestedOpportunity[]) {
   const supabase = getSupabaseAdminClient();
   if (items.length === 0) {
@@ -188,6 +209,7 @@ async function upsertItemsForSource(runId: string, sourceId: string, items: Inge
 
   const now = new Date().toISOString();
   const rows = items.map((item) => {
+    const naicsCodes = buildCanonicalNaicsCodes(item);
     const contentHash = hashPayload({
       title: item.title,
       category: item.category,
@@ -203,6 +225,7 @@ async function upsertItemsForSource(runId: string, sourceId: string, items: Inge
       publishedAt: item.publishedAt,
       keywords: item.keywords,
       tags: item.tags,
+      naicsCodes,
       detailPayload: item.detailPayload ?? null,
     });
 
@@ -227,6 +250,7 @@ async function upsertItemsForSource(runId: string, sourceId: string, items: Inge
       content_hash: contentHash,
       keywords: item.keywords,
       tags: item.tags,
+      naics_codes: naicsCodes,
       updated_at: now,
     };
   });
@@ -280,6 +304,7 @@ async function upsertItemsForSource(runId: string, sourceId: string, items: Inge
         feed_item_id: feedItemId,
         snapshot_date: now.slice(0, 10),
         rank_inputs: {
+          naicsCodes: row.naics_codes,
           keywords: row.keywords,
           tags: row.tags,
         },
