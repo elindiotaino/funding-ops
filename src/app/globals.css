@@ -464,6 +464,43 @@ button:hover {
   cursor: default;
 }
 
+.naics-search {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.naics-search-results {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.naics-result {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.naics-result strong {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.9rem;
+  color: #d9f7ff;
+}
+
+.naics-result span {
+  color: var(--muted);
+}
+
+.naics-result--selected {
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
 .preference-card {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;

@@ -10,7 +10,7 @@ const profileSchema = z.object({
   companyName: z.string().trim().min(1),
   companySummary: z.string().trim().min(1),
   geography: z.string().trim().min(1),
-  naicsCodes: z.array(z.string().trim().min(1)).max(10),
+  naicsCodes: z.array(z.string().trim().min(1)).max(50),
   sectors: z.array(z.string().trim().min(1)).max(12),
   assistanceTypes: z.array(z.string().trim().min(1)).max(12),
   keywords: z.array(z.string().trim().min(1)).max(20),

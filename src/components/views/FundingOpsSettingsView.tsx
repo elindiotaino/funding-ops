@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { FundingWorkspaceData } from "@/lib/feed";
 import {
@@ -12,7 +12,12 @@ import {
   WorkspaceNotices,
   prettifyLabel,
 } from "@/components/FundingOpsShared";
-import { formatNaicsLabel, NAICS_OPTIONS } from "@/lib/naics";
+import { formatNaicsLabel } from "@/lib/naics";
+
+type NaicsSearchResult = {
+  code: string;
+  label: string;
+};
 
 type SettingsViewProps = {
   basePath: string;
@@ -27,6 +32,11 @@ export function FundingOpsSettingsView({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [naicsQuery, setNaicsQuery] = useState("");
+  const [naicsResults, setNaicsResults] = useState<NaicsSearchResult[]>([]);
+  const [naicsLookup, setNaicsLookup] = useState<Record<string, string>>({});
+  const [naicsSearchError, setNaicsSearchError] = useState<string | null>(null);
+  const [isSearchingNaics, setIsSearchingNaics] = useState(false);
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
     companyName: initialWorkspace.profile.companyName,
     companySummary: initialWorkspace.profile.companySummary,
@@ -42,6 +52,94 @@ export function FundingOpsSettingsView({
     emailJurisdictions: initialWorkspace.profile.emailJurisdictions,
     emailTags: initialWorkspace.profile.emailTags,
   });
+
+  useEffect(() => {
+    const codes = profileDraft.naicsCodes;
+    if (codes.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${basePath}/api/naics-search?codes=${encodeURIComponent(codes.join(","))}`,
+          { cache: "no-store" },
+        );
+        const payload = await response.json();
+        if (!response.ok || cancelled) {
+          return;
+        }
+
+        const nextLookup = Object.fromEntries(
+          ((payload.results ?? []) as NaicsSearchResult[]).map((result) => [result.code, result.label]),
+        );
+        setNaicsLookup((current) => ({ ...current, ...nextLookup }));
+      } catch {
+        // Keep existing selections usable even if lookup refresh fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [basePath, profileDraft.naicsCodes]);
+
+  useEffect(() => {
+    const query = naicsQuery.trim();
+    if (query.length < 2) {
+      setNaicsResults([]);
+      setNaicsSearchError(null);
+      setIsSearchingNaics(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearchingNaics(true);
+    setNaicsSearchError(null);
+
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(
+            `${basePath}/api/naics-search?q=${encodeURIComponent(query)}`,
+            { cache: "no-store" },
+          );
+          const payload = await response.json();
+          if (cancelled) {
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Could not search NAICS.");
+          }
+
+          const results = (payload.results ?? []) as NaicsSearchResult[];
+          setNaicsResults(results);
+          setNaicsLookup((current) => ({
+            ...current,
+            ...Object.fromEntries(results.map((result) => [result.code, result.label])),
+          }));
+        } catch (searchError) {
+          if (!cancelled) {
+            setNaicsResults([]);
+            setNaicsSearchError(
+              searchError instanceof Error ? searchError.message : "Could not search NAICS codes.",
+            );
+          }
+        } finally {
+          if (!cancelled) {
+            setIsSearchingNaics(false);
+          }
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [basePath, naicsQuery]);
 
   const emailPreferenceSummary = useMemo(() => {
     const parts = [];
@@ -198,19 +296,77 @@ export function FundingOpsSettingsView({
             </label>
 
             <div className="full">
-              <SelectionGroup
-                label="Primary NAICS filter"
-                options={NAICS_OPTIONS.map((option) => option.code)}
-                selected={profileDraft.naicsCodes}
-                onToggle={(value) =>
-                  setProfileDraft((current) => ({
-                    ...current,
-                    naicsCodes: toggleSelection(current.naicsCodes, value),
-                  }))
-                }
-                emptyCopy="No NAICS options available."
-                formatOptionLabel={formatNaicsLabel}
-              />
+              <div className="selection-group">
+                <div className="selection-group__header">
+                  <span>Primary NAICS filter</span>
+                  <strong>
+                    {profileDraft.naicsCodes.length === 0
+                      ? "No codes selected"
+                      : `${profileDraft.naicsCodes.length} selected`}
+                  </strong>
+                </div>
+                <p className="selection-group__empty">
+                  Search the official NAICS catalog by code or keyword and attach the codes relevant
+                  to this account.
+                </p>
+                <label className="naics-search">
+                  <span>Search NAICS codes</span>
+                  <input
+                    value={naicsQuery}
+                    onChange={(event) => setNaicsQuery(event.target.value)}
+                    placeholder="Search 541511, software, trucking, home health, consulting"
+                  />
+                </label>
+                {naicsSearchError ? <p className="notice error">{naicsSearchError}</p> : null}
+                <div className="chip-grid">
+                  {profileDraft.naicsCodes.map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      className="filter-chip filter-chip--active"
+                      onClick={() =>
+                        setProfileDraft((current) => ({
+                          ...current,
+                          naicsCodes: current.naicsCodes.filter((entry) => entry !== code),
+                        }))
+                      }
+                    >
+                      {naicsLookup[code] ? `${code} ${naicsLookup[code]}` : formatNaicsLabel(code)}
+                    </button>
+                  ))}
+                </div>
+                <div className="naics-search-results">
+                  {naicsQuery.trim().length < 2 ? (
+                    <p className="selection-group__empty">Type at least 2 characters to search.</p>
+                  ) : isSearchingNaics ? (
+                    <p className="selection-group__empty">Searching official NAICS options...</p>
+                  ) : naicsResults.length === 0 ? (
+                    <p className="selection-group__empty">No NAICS matches found for this query.</p>
+                  ) : (
+                    naicsResults.map((result) => {
+                      const selected = profileDraft.naicsCodes.includes(result.code);
+                      return (
+                        <button
+                          key={`${result.code}-${result.label}`}
+                          type="button"
+                          className={`naics-result ${selected ? "naics-result--selected" : ""}`}
+                          onClick={() =>
+                            setProfileDraft((current) => ({
+                              ...current,
+                              naicsCodes: selected
+                                ? current.naicsCodes.filter((entry) => entry !== result.code)
+                                : [...current.naicsCodes, result.code],
+                            }))
+                          }
+                        >
+                          <strong>{result.code}</strong>
+                          <span>{result.label}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="preference-card full">
