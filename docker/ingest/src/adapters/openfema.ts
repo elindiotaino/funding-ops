@@ -1,6 +1,7 @@
 import { fetchJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import { classifyNaicsCodes } from "./naics-classification.js";
 
 type OpenFemaResponse = {
   DisasterDeclarationsSummaries?: Array<{
@@ -70,6 +71,18 @@ export async function runOpenFemaAdapter(source: SourceDefinition): Promise<Adap
 
       const countyArea = item.designatedArea?.trim() || "Puerto Rico";
       const summary = `${item.incidentType ?? "Disaster"} declaration for ${countyArea}. Programs declared: ${programs.length > 0 ? programs.join(", ") : "none listed"}.`;
+      const naicsCodes = classifyNaicsCodes({
+        text: [
+          title,
+          summary,
+          item.declarationType,
+          item.disasterType,
+          item.incidentType,
+          countyArea,
+          ...programs,
+        ],
+        hints: ["92", "62"],
+      });
 
       return {
         sourceItemId,
@@ -101,6 +114,7 @@ export async function runOpenFemaAdapter(source: SourceDefinition): Promise<Adap
           "puerto rico",
         ].filter((value): value is string => Boolean(value && value.trim())),
         tags: ["aid", "recovery", "resilience", "puerto-rico", "fema"],
+        naicsCodes,
         detailPayload: {
           declarationString: item.femaDeclarationString ?? null,
           disasterNumber: item.disasterNumber ?? null,

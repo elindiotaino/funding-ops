@@ -1,6 +1,7 @@
 import { fetchJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import { classifyNaicsCodes } from "./naics-classification.js";
 
 type USAJobsResponse = {
   SearchResult?: {
@@ -85,6 +86,17 @@ export async function runUsaJobsAdapter(source: SourceDefinition): Promise<Adapt
         remuneration?.MinimumRange && remuneration?.MaximumRange
           ? `${remuneration.MinimumRange}-${remuneration.MaximumRange} ${remuneration.Description ?? ""}`.trim()
           : null;
+      const naicsCodes = classifyNaicsCodes({
+        text: [
+          title,
+          descriptor.UserArea?.Details?.JobSummary,
+          descriptor.QualificationSummary,
+          descriptor.OrganizationName,
+          descriptor.DepartmentName,
+          descriptor.PositionLocationDisplay,
+        ],
+        hints: ["92"],
+      });
 
       return {
         sourceItemId,
@@ -113,6 +125,7 @@ export async function runUsaJobsAdapter(source: SourceDefinition): Promise<Adapt
           "puerto rico",
         ].filter((value): value is string => Boolean(value && value.trim())),
         tags: ["jobs", "federal", "puerto-rico"],
+        naicsCodes,
         detailPayload: {
           positionId: descriptor.PositionID ?? null,
           organizationName: descriptor.OrganizationName ?? null,

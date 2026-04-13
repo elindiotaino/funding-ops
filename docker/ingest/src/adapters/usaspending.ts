@@ -1,6 +1,7 @@
 import { postJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import { classifyNaicsCodes } from "./naics-classification.js";
 
 type UsaSpendingResponse = {
   results?: Array<{
@@ -85,6 +86,19 @@ export async function runUsaSpendingAdapter(source: SourceDefinition): Promise<A
         return null;
       }
 
+      const naicsCodes = classifyNaicsCodes({
+        text: [
+          title,
+          item["Recipient Name"],
+          item["Awarding Agency"],
+          item["Awarding Sub Agency"],
+          item["Funding Agency"],
+          item["Funding Sub Agency"],
+          item["Award Type"],
+        ],
+        hints: ["54", "52"],
+      });
+
       return {
         sourceItemId,
         canonicalKey: `${source.key}:${sourceItemId}`,
@@ -117,6 +131,7 @@ export async function runUsaSpendingAdapter(source: SourceDefinition): Promise<A
           "usaspending",
         ].filter((value): value is string => Boolean(value && value.trim())),
         tags: ["awards", "analytics", "puerto-rico", "federal"],
+        naicsCodes,
         detailPayload: {
           awardId: item["Award ID"] ?? null,
           recipientName: item["Recipient Name"] ?? null,

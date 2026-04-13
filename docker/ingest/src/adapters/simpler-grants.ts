@@ -1,6 +1,7 @@
 import { postJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import { classifyNaicsCodes } from "./naics-classification.js";
 
 type SimplerSearchResponse = {
   data?: Array<{
@@ -64,6 +65,19 @@ export async function runSimplerGrantsAdapter(source: SourceDefinition): Promise
         return null;
       }
 
+      const naicsCodes = classifyNaicsCodes({
+        text: [
+          title,
+          item.summary_description,
+          item.agency_name,
+          ...(item.applicant_types ?? []),
+          ...(item.funding_instrument ?? []),
+        ],
+        hints: item.funding_instrument?.some((value) => value.toLowerCase().includes("grant"))
+          ? ["54", "61", "62"]
+          : undefined,
+      });
+
       return {
         sourceItemId,
         canonicalKey: `${source.key}:${sourceItemId}`,
@@ -90,6 +104,7 @@ export async function runSimplerGrantsAdapter(source: SourceDefinition): Promise
           "simpler grants",
         ].filter((value): value is string => Boolean(value && value.trim())),
         tags: ["federal", "grants", "api", item.opportunity_status?.toLowerCase() || "unknown"].filter(Boolean),
+        naicsCodes,
         detailPayload: {
           opportunityNumber: item.opportunity_number ?? null,
           agencyName: item.agency_name ?? null,

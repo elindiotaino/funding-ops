@@ -1,6 +1,7 @@
 import { fetchJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import { classifyNaicsCodes } from "./naics-classification.js";
 
 type SamAssistanceResponse = {
   assistanceListingsData?: Array<{
@@ -96,6 +97,22 @@ export async function runSamAssistanceAdapter(source: SourceDefinition): Promise
         item.popularLongName?.trim() ||
         item.popularShortName?.trim() ||
         null;
+      const naicsCodes = classifyNaicsCodes({
+        text: [
+          title,
+          summary,
+          item.overview?.applicantEligibility,
+          item.overview?.beneficiaryEligibility,
+          item.overview?.examplesOfFundedProjects,
+          organization,
+          ...applicantTypes,
+          ...beneficiaryTypes,
+          ...assistanceTypes,
+        ],
+        hints: assistanceTypes.some((value) => value.toLowerCase().includes("grant"))
+          ? ["54", "61", "62"]
+          : undefined,
+      });
 
       return {
         sourceItemId,
@@ -125,6 +142,7 @@ export async function runSamAssistanceAdapter(source: SourceDefinition): Promise
           "sam.gov assistance listings",
         ].filter((value): value is string => Boolean(value && value.trim())),
         tags: ["federal", "aid", "sam-assistance", ...assistanceTypes.map((value) => value.toLowerCase())],
+        naicsCodes,
         detailPayload: {
           organization,
           applicantTypes,

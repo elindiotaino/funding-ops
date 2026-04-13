@@ -1,6 +1,7 @@
 import { postJson } from "../http.js";
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity } from "../types.js";
+import { classifyNaicsCodes } from "./naics-classification.js";
 
 type GrantsGovSearchResponse = {
   data?: {
@@ -52,6 +53,10 @@ function toOpportunity(source: SourceDefinition, item: GrantsGovOpportunity): In
     "grants.gov",
     item.oppStatus,
   ].filter((value): value is string => Boolean(value && value.trim()));
+  const naicsCodes = classifyNaicsCodes({
+    text: [item.title, summary, agency, ...(item.alnist ?? [])],
+    hints: item.docType?.toLowerCase().includes("grant") ? ["54", "61", "62"] : undefined,
+  });
 
   return {
     sourceItemId,
@@ -75,6 +80,7 @@ function toOpportunity(source: SourceDefinition, item: GrantsGovOpportunity): In
     publishedAt: normalizeDate(item.openDate),
     keywords,
     tags,
+    naicsCodes,
     detailPayload: {
       agencyName: item.agencyName ?? null,
       agencyCode: item.agencyCode ?? null,
