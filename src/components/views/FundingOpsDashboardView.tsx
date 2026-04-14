@@ -50,17 +50,21 @@ export function FundingOpsDashboardView({
     try {
       const response = await fetch(`${basePath}/api/feed-refresh`, { method: "POST" });
       const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Could not refresh the official feed.");
-      }
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Could not refresh the official feed.");
+        }
 
-      setWorkspace(payload.workspace);
-      setMessage("Official-source feed refreshed.");
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : "Could not refresh feed.");
-    } finally {
-      setIsRefreshing(false);
-    }
+        setWorkspace(payload.workspace);
+        setMessage(
+          typeof payload.notice === "string" && payload.notice.trim().length > 0
+            ? payload.notice
+            : "Official-source feed refreshed.",
+        );
+      } catch (refreshError) {
+        setError(refreshError instanceof Error ? refreshError.message : "Could not refresh feed.");
+      } finally {
+        setIsRefreshing(false);
+      }
   }
 
   return (
