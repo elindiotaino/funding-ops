@@ -70,6 +70,7 @@ export function FundingOpsOpportunitiesView({
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBrowsingHistory, setIsBrowsingHistory] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedItemDetail, setSelectedItemDetail] = useState<FeedItemDetailResponse | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -283,79 +284,99 @@ export function FundingOpsOpportunitiesView({
             }
             emptyCopy="No stored daily snapshots yet."
           />
-          <SelectionGroup
-            label="Official sources"
-            options={sourceOptions}
-            selected={workspace.history.selectedSourceKeys}
-            onToggle={(value) =>
-              updateHistoryRoute({
-                sourceKeys: toggleSelection(workspace.history.selectedSourceKeys, value),
-                page: 1,
-              })
-            }
-            formatOptionLabel={(value) => sourceLabelMap.get(value) ?? value}
-          />
-          {workspace.profile.naicsCodes.length > 0 ? (
-            <div className="selection-group">
-              <div className="selection-group__header">
-                <span>Profile NAICS scope</span>
-                <strong>{workspace.profile.naicsCodes.length} active</strong>
-              </div>
-              <div className="chip-grid">
-                {workspace.profile.naicsCodes.map((code) => (
-                  <span className="filter-chip filter-chip--static" key={`profile-naics-${code}`}>
-                    {formatNaicsLabel(code)}
-                  </span>
-                ))}
+          <div className="advanced-filters">
+            <button
+              type="button"
+              className="advanced-filters__toggle"
+              aria-expanded={showAdvancedFilters}
+              onClick={() => setShowAdvancedFilters((current) => !current)}
+            >
+              <span>Advanced filters</span>
+              <strong>{showAdvancedFilters ? "Hide" : "Show"}</strong>
+            </button>
+            <div
+              className={`advanced-filters__content ${
+                showAdvancedFilters ? "advanced-filters__content--expanded" : ""
+              }`}
+              aria-hidden={!showAdvancedFilters}
+            >
+              <div className="advanced-filters__inner">
+                <SelectionGroup
+                  label="Official sources"
+                  options={sourceOptions}
+                  selected={workspace.history.selectedSourceKeys}
+                  onToggle={(value) =>
+                    updateHistoryRoute({
+                      sourceKeys: toggleSelection(workspace.history.selectedSourceKeys, value),
+                      page: 1,
+                    })
+                  }
+                  formatOptionLabel={(value) => sourceLabelMap.get(value) ?? value}
+                />
+                {workspace.profile.naicsCodes.length > 0 ? (
+                  <div className="selection-group">
+                    <div className="selection-group__header">
+                      <span>Profile NAICS scope</span>
+                      <strong>{workspace.profile.naicsCodes.length} active</strong>
+                    </div>
+                    <div className="chip-grid">
+                      {workspace.profile.naicsCodes.map((code) => (
+                        <span className="filter-chip filter-chip--static" key={`profile-naics-${code}`}>
+                          {formatNaicsLabel(code)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <SelectionGroup
+                  label="Opportunity types"
+                  options={workspace.filters.categories}
+                  selected={filters.categories}
+                  onToggle={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      categories: toggleSelection(current.categories, value),
+                    }))
+                  }
+                />
+                <SelectionGroup
+                  label="Jurisdictions"
+                  options={workspace.filters.jurisdictions}
+                  selected={filters.jurisdictions}
+                  onToggle={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      jurisdictions: toggleSelection(current.jurisdictions, value),
+                    }))
+                  }
+                />
+                <SelectionGroup
+                  label="NAICS sectors"
+                  options={workspace.filters.naicsCodes}
+                  selected={filters.naicsCodes}
+                  onToggle={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      naicsCodes: toggleSelection(current.naicsCodes, value),
+                    }))
+                  }
+                  emptyCopy="No NAICS codes are attached to the current result set yet."
+                  formatOptionLabel={formatNaicsLabel}
+                />
+                <SelectionGroup
+                  label="Tags"
+                  options={workspace.filters.tags}
+                  selected={filters.tags}
+                  onToggle={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      tags: toggleSelection(current.tags, value),
+                    }))
+                  }
+                />
               </div>
             </div>
-          ) : null}
-          <SelectionGroup
-            label="Opportunity types"
-            options={workspace.filters.categories}
-            selected={filters.categories}
-            onToggle={(value) =>
-              setFilters((current) => ({
-                ...current,
-                categories: toggleSelection(current.categories, value),
-              }))
-            }
-          />
-          <SelectionGroup
-            label="Jurisdictions"
-            options={workspace.filters.jurisdictions}
-            selected={filters.jurisdictions}
-            onToggle={(value) =>
-              setFilters((current) => ({
-                ...current,
-                jurisdictions: toggleSelection(current.jurisdictions, value),
-              }))
-            }
-          />
-          <SelectionGroup
-            label="NAICS sectors"
-            options={workspace.filters.naicsCodes}
-            selected={filters.naicsCodes}
-            onToggle={(value) =>
-              setFilters((current) => ({
-                ...current,
-                naicsCodes: toggleSelection(current.naicsCodes, value),
-              }))
-            }
-            emptyCopy="No NAICS codes are attached to the current result set yet."
-            formatOptionLabel={formatNaicsLabel}
-          />
-          <SelectionGroup
-            label="Tags"
-            options={workspace.filters.tags}
-            selected={filters.tags}
-            onToggle={(value) =>
-              setFilters((current) => ({
-                ...current,
-                tags: toggleSelection(current.tags, value),
-              }))
-            }
-          />
+          </div>
         </div>
       </section>
 
