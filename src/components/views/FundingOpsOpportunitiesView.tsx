@@ -91,6 +91,10 @@ export function FundingOpsOpportunitiesView({
   );
 
   useEffect(() => {
+    setWorkspace(initialWorkspace);
+  }, [initialWorkspace]);
+
+  useEffect(() => {
     setIsBrowsingHistory(false);
   }, [workspace.history.selectedSnapshotDate, workspace.history.selectedSourceKeys, workspace.pagination.page]);
 
