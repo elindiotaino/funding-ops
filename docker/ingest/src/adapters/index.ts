@@ -1,5 +1,6 @@
 import type { SourceDefinition } from "../source-registry.js";
 import type { AdapterRunResult, IngestedOpportunity, RefreshScope } from "../types.js";
+import { hasCompatibleNaicsCodes } from "../naics.js";
 import { runGrantsGovAdapter } from "./grants-gov.js";
 import { runOpenFemaAdapter } from "./openfema.js";
 import { runSamAssistanceAdapter } from "./sam-assistance.js";
@@ -14,7 +15,7 @@ function applyScope(items: IngestedOpportunity[], scope?: RefreshScope) {
 
   const normalizedKeywords = scope.keywords.map((keyword) => keyword.toLowerCase());
   return items.filter((item) => {
-    if (item.naicsCodes?.some((code) => scope.naicsCodes.includes(code))) {
+    if (hasCompatibleNaicsCodes(scope.naicsCodes, item.naicsCodes ?? [])) {
       return true;
     }
 

@@ -42,7 +42,7 @@ const fullNaicsMap = new Map<string, FullNaicsOption>(
   FULL_NAICS_OPTIONS.map((option) => [option.code, option]),
 );
 
-function getSectorCode(code: string) {
+export function getNaicsSectorCode(code: string) {
   const normalized = code.trim();
   if (!normalized) {
     return null;
@@ -69,7 +69,7 @@ function getSectorCode(code: string) {
 }
 
 export function getNaicsOption(code: string) {
-  const sectorCode = getSectorCode(code);
+  const sectorCode = getNaicsSectorCode(code);
   return sectorCode ? naicsMap.get(sectorCode) : undefined;
 }
 
@@ -83,6 +83,36 @@ export function getNaicsKeywords(codes: string[]) {
       codes.flatMap((code) => getNaicsOption(code)?.keywords ?? []),
     ),
   );
+}
+
+export function naicsCodesMatch(leftCode: string, rightCode: string) {
+  const left = leftCode.trim();
+  const right = rightCode.trim();
+  if (!left || !right) {
+    return false;
+  }
+
+  if (left === right) {
+    return true;
+  }
+
+  const leftSector = getNaicsSectorCode(left);
+  const rightSector = getNaicsSectorCode(right);
+  return Boolean(leftSector && rightSector && leftSector === rightSector);
+}
+
+export function findCompatibleNaicsCodes(selectedCodes: string[], itemCodes: string[]) {
+  return selectedCodes.filter((selectedCode) =>
+    itemCodes.some((itemCode) => naicsCodesMatch(selectedCode, itemCode)),
+  );
+}
+
+export function hasCompatibleNaicsCodes(selectedCodes: string[], itemCodes: string[]) {
+  if (selectedCodes.length === 0) {
+    return true;
+  }
+
+  return findCompatibleNaicsCodes(selectedCodes, itemCodes).length > 0;
 }
 
 export function formatNaicsLabel(code: string) {

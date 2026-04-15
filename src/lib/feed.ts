@@ -1,5 +1,11 @@
 import { sqlite } from "@/db";
-import { formatNaicsLabel, getNaicsKeywords, inferNaicsCodesFromText } from "@/lib/naics";
+import {
+  findCompatibleNaicsCodes,
+  formatNaicsLabel,
+  getNaicsKeywords,
+  hasCompatibleNaicsCodes,
+  inferNaicsCodesFromText,
+} from "@/lib/naics";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseServiceRoleEnv } from "@/lib/supabase/env";
 
@@ -1052,7 +1058,7 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
   const searchable = buildSearchableText(item);
   const reasons: string[] = [];
   let score = 0;
-  const naicsMatches = profile.naicsCodes.filter((code) => item.naicsCodes.includes(code));
+  const naicsMatches = findCompatibleNaicsCodes(profile.naicsCodes, item.naicsCodes);
 
   const keywordMatches = normalizeTokens(profile.keywords).filter((token) =>
     searchable.includes(token),
@@ -1117,10 +1123,8 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
   };
 }
 
-function matchesEmailPreferences(item: RawFeedItem | ScoredItem, profile: RawCompanyProfile) {
-  const matchesNaics =
-    profile.naicsCodes.length === 0 ||
-    item.naicsCodes.some((code) => profile.naicsCodes.includes(code));
+  function matchesEmailPreferences(item: RawFeedItem | ScoredItem, profile: RawCompanyProfile) {
+  const matchesNaics = hasCompatibleNaicsCodes(profile.naicsCodes, item.naicsCodes);
   const matchesCategories =
     profile.emailCategories.length === 0 || profile.emailCategories.includes(item.category);
   const matchesJurisdictions =
@@ -1468,11 +1472,10 @@ export async function getFundingWorkspaceData(
         reasons: scored.reasons,
       };
     })
-    .filter(
-      (item) =>
-        profile.naicsCodes.length === 0 ||
-        item.naicsCodes.some((code) => profile.naicsCodes.includes(code)),
-    )
+      .filter(
+        (item) =>
+          hasCompatibleNaicsCodes(profile.naicsCodes, item.naicsCodes),
+      )
     .sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
   const totalItems = scopedItems.length;
   const paginatedItems = scopedItems.slice((page - 1) * pageSize, page * pageSize);

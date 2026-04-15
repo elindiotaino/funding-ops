@@ -25,7 +25,7 @@ type NaicsSectorOption = (typeof NAICS_OPTIONS)[number];
 
 const naicsMap = new Map<string, NaicsSectorOption>(NAICS_OPTIONS.map((option) => [option.code, option]));
 
-function getSectorCode(code: string) {
+export function getNaicsSectorCode(code: string) {
   const normalized = code.trim();
   if (!normalized) {
     return null;
@@ -64,11 +64,37 @@ export function getNaicsKeywords(codes: string[]) {
   return Array.from(
     new Set(
       codes.flatMap((code) => {
-        const sectorCode = getSectorCode(code);
+        const sectorCode = getNaicsSectorCode(code);
         return sectorCode
           ? naicsMap.get(sectorCode)?.keywords ?? []
           : [];
       }),
     ),
+  );
+}
+
+export function naicsCodesMatch(leftCode: string, rightCode: string) {
+  const left = leftCode.trim();
+  const right = rightCode.trim();
+  if (!left || !right) {
+    return false;
+  }
+
+  if (left === right) {
+    return true;
+  }
+
+  const leftSector = getNaicsSectorCode(left);
+  const rightSector = getNaicsSectorCode(right);
+  return Boolean(leftSector && rightSector && leftSector === rightSector);
+}
+
+export function hasCompatibleNaicsCodes(selectedCodes: string[], itemCodes: string[]) {
+  if (selectedCodes.length === 0) {
+    return true;
+  }
+
+  return selectedCodes.some((selectedCode) =>
+    itemCodes.some((itemCode) => naicsCodesMatch(selectedCode, itemCode)),
   );
 }
