@@ -55,6 +55,7 @@ const requiredTables = [
   { table: "feed_item_snapshots", select: "id,snapshot_date" },
   { table: "feed_item_details", select: "id,detail_status" },
   { table: "funding_ops_user_profiles", select: "profile_id,company_name,naics_codes" },
+  { table: "user_opportunity_states", select: "id,profile_id,feed_item_id,state" },
 ];
 
 const results = [];

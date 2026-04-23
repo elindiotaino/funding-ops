@@ -1,0 +1,2 @@
+-- Placeholder to align funding-ops with shared Supabase migration history.
+-- This migration version was applied from hub-joche-dev against the shared project.

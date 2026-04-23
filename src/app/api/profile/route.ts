@@ -40,6 +40,6 @@ export async function POST(request: Request) {
   }
 
   const profile = await saveFundingProfileForUser(access.user.id, payload.data);
-  const workspace = await getFundingWorkspaceData(undefined, profile);
+  const workspace = await getFundingWorkspaceData({ viewerProfileId: access.user.id }, profile);
   return NextResponse.json({ workspace });
 }

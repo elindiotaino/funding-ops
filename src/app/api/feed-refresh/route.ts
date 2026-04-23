@@ -78,7 +78,7 @@ export async function POST() {
 
       return NextResponse.json({
         refresh,
-        workspace: await getFundingWorkspaceData(undefined, profile),
+        workspace: await getFundingWorkspaceData({ viewerProfileId: access.user.id }, profile),
       });
     } catch (error) {
       if (isMissingIngestConfigError(error)) {
@@ -90,7 +90,7 @@ export async function POST() {
           },
           notice:
             "Live source refresh is not configured for this deployment yet. Showing the latest stored workspace data instead.",
-          workspace: await getFundingWorkspaceData(undefined, profile),
+          workspace: await getFundingWorkspaceData({ viewerProfileId: access.user.id }, profile),
         });
       }
 

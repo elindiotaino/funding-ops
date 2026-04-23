@@ -43,7 +43,13 @@ export async function getFundingAppPageData(options?: {
     appUrl,
     basePath,
     hubUrl,
-    workspace: await getFundingWorkspaceData(options, profile),
+    workspace: await getFundingWorkspaceData(
+      {
+        ...options,
+        viewerProfileId: access.user.id,
+      },
+      profile,
+    ),
     dashboard: getDashboardData(),
   };
 }

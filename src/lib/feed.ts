@@ -1,4 +1,5 @@
 import { sqlite } from "@/db";
+import type { OpportunityStateValue, UserOpportunityStateRecord } from "@/lib/opportunity-state";
 import {
   findCompatibleNaicsCodes,
   formatNaicsLabel,
@@ -119,6 +120,15 @@ type RawIngestionRun = {
 export type ScoredItem = RawFeedItem & {
   relevanceScore: number;
   reasons: string[];
+  opportunityState: {
+    state: OpportunityStateValue;
+    decisionReason: string | null;
+    decisionNote: string | null;
+    appliedAt: string | null;
+    followUpAt: string | null;
+    archivedAt: string | null;
+    updatedAt: string | null;
+  } | null;
 };
 
 export type FundingWorkspaceData = {
@@ -161,6 +171,7 @@ type FundingWorkspaceOptions = {
   pageSize?: number;
   snapshotDate?: string;
   sourceKeys?: string[];
+  viewerProfileId?: string;
 };
 
 export const defaultProfile: CompanyProfileInput = {
@@ -1466,13 +1477,37 @@ export async function getFundingWorkspaceData(
   const baseItems =
     remoteWorkspace?.items ??
     getFeedItems({ page: 1, pageSize: Math.max(pageSize, sqliteTotalItems || pageSize) });
+  const opportunityStates =
+    options?.viewerProfileId && hasSupabaseServiceRoleEnv()
+      ? await import("@/lib/opportunity-state").then(({ listUserOpportunityStates }) =>
+          listUserOpportunityStates(
+            options.viewerProfileId!,
+            (remoteWorkspace?.items ?? baseItems).map((item) => String(item.id)),
+          ),
+        )
+      : [];
+  const opportunityStateByItemId = new Map(
+    opportunityStates.map((state) => [state.feedItemId, state] satisfies [string, UserOpportunityStateRecord]),
+  );
   const scopedItems = (remoteWorkspace?.items ?? baseItems)
     .map((item) => {
       const scored = scoreItemForProfile(item, profile);
+      const savedState = opportunityStateByItemId.get(String(item.id));
       return {
         ...item,
         relevanceScore: scored.score,
         reasons: scored.reasons,
+        opportunityState: savedState
+          ? {
+              state: savedState.state,
+              decisionReason: savedState.decisionReason,
+              decisionNote: savedState.decisionNote,
+              appliedAt: savedState.appliedAt,
+              followUpAt: savedState.followUpAt,
+              archivedAt: savedState.archivedAt,
+              updatedAt: savedState.updatedAt,
+            }
+          : null,
       };
     })
       .filter(
