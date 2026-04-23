@@ -15,6 +15,8 @@ type DailySummaryPayload = {
   email: string;
   snapshotDate: string;
   profileNaicsLabels: string[];
+  appUrl: string;
+  opportunitiesUrl: string;
   totalAvailable: number;
   newItems: number;
   recommendedItems: number;
@@ -45,7 +47,9 @@ function buildTextBody(payload: DailySummaryPayload) {
     `Account NAICS scope: ${payload.profileNaicsLabels.length > 0 ? payload.profileNaicsLabels.join(", ") : "No NAICS codes selected"}\n` +
     `Available to evaluate: ${payload.totalAvailable}\n` +
     `New since last summary: ${payload.newItems}\n` +
-    `Recommended matches: ${payload.recommendedItems}\n\n` +
+    `Recommended matches: ${payload.recommendedItems}\n` +
+    `Open full ranked feed: ${payload.opportunitiesUrl}\n` +
+    `Open app home: ${payload.appUrl}\n\n` +
     `Top relevant items:\n`;
   const items = payload.items
     .map(
@@ -84,6 +88,20 @@ function buildHtmlBody(payload: DailySummaryPayload) {
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;">
       <h1 style="margin-bottom:8px;">Daily Funding Ops Summary</h1>
       <p style="margin-top:0;">Top relevant items for ${payload.companyName}.</p>
+      <p style="margin:16px 0;">
+        <a
+          href="${payload.opportunitiesUrl}"
+          style="display:inline-block;padding:12px 18px;border-radius:999px;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:700;margin-right:10px;"
+        >
+          Review Full Ranked Feed
+        </a>
+        <a
+          href="${payload.appUrl}"
+          style="display:inline-block;padding:12px 18px;border-radius:999px;border:1px solid #0f766e;color:#0f766e;text-decoration:none;font-weight:700;"
+        >
+          Open Funding Ops
+        </a>
+      </p>
       <ul style="padding-left:20px;">
         <li>Snapshot date: ${payload.snapshotDate}</li>
         <li>Account NAICS scope: ${payload.profileNaicsLabels.length > 0 ? payload.profileNaicsLabels.join(", ") : "No NAICS codes selected"}</li>
@@ -92,6 +110,9 @@ function buildHtmlBody(payload: DailySummaryPayload) {
         <li>Recommended matches: ${payload.recommendedItems}</li>
       </ul>
       <ol style="padding-left:20px;">${items}</ol>
+      <p style="margin-top:24px;">
+        Continue reviewing: <a href="${payload.opportunitiesUrl}">${payload.opportunitiesUrl}</a>
+      </p>
     </div>
   `;
 }

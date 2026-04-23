@@ -434,6 +434,8 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       email,
       snapshotDate: snapshotDate ?? new Date().toISOString().slice(0, 10),
       profileNaicsLabels: profile.naicsCodes.map((code) => formatNaicsLabel(code)),
+      appUrl: process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://hub.joche.dev/funding-ops",
+      opportunitiesUrl: `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://hub.joche.dev/funding-ops"}/opportunities`,
       totalAvailable,
       newItems,
       recommendedItems,
