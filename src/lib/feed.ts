@@ -2,6 +2,7 @@ import { sqlite } from "@/db";
 import {
   isOpportunityEvaluated,
   isOpportunityUnevaluated,
+  listUserOpportunityStates,
   type OpportunityStateValue,
   type UserOpportunityStateRecord,
 } from "@/lib/opportunity-state";
@@ -182,6 +183,20 @@ type FundingWorkspaceOptions = {
   viewerProfileId?: string;
 };
 
+type OpportunityFeedbackProfile = {
+  currentStateByItemId: Map<string, UserOpportunityStateRecord>;
+  positiveTokenWeights: Map<string, number>;
+  negativeTokenWeights: Map<string, number>;
+  positiveCategories: Set<string>;
+  negativeCategories: Set<string>;
+  positiveJurisdictions: Set<string>;
+  negativeJurisdictions: Set<string>;
+  positiveSourceKeys: Set<string>;
+  negativeSourceKeys: Set<string>;
+  positiveNaicsCodes: Set<string>;
+  negativeNaicsCodes: Set<string>;
+};
+
 export const defaultProfile: CompanyProfileInput = {
   companyName: "Puerto Rico Opportunity Desk",
   companySummary:
@@ -245,6 +260,39 @@ function normalizeText(value: string) {
     .replace(/[^a-z0-9\s]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const ignoredFeedbackTokens = new Set([
+  "grant",
+  "grants",
+  "funding",
+  "program",
+  "programs",
+  "opportunity",
+  "opportunities",
+  "application",
+  "apply",
+  "applied",
+  "review",
+  "state",
+  "item",
+  "items",
+  "good",
+  "great",
+  "strong",
+  "match",
+  "fits",
+  "does",
+  "doesn",
+  "work",
+  "need",
+  "needs",
+  "account",
+  "business",
+]);
+
+function filterFeedbackTokens(tokens: string[]) {
+  return tokens.filter((token) => token.length >= 4 && !ignoredFeedbackTokens.has(token));
 }
 
 const sourceSeeds: SourceSeed[] = [
@@ -566,6 +614,186 @@ function buildSearchableText(item: RawFeedItem) {
       ...item.keywords,
     ].join(" "),
   );
+}
+
+async function loadSupabaseFeedItemsByIds(feedItemIds: string[]) {
+  if (!hasSupabaseServiceRoleEnv() || feedItemIds.length === 0) {
+    return [] as RawFeedItem[];
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const { data: sourceRows, error: sourceError } = await supabase
+    .from("official_sources")
+    .select("id, source_key");
+
+  if (sourceError) {
+    throw sourceError;
+  }
+
+  const sourceIdToKey = new Map(
+    (((sourceRows ?? []) as Array<{ id: string; source_key: string }>)).map((row) => [row.id, row.source_key]),
+  );
+
+  const rows: Array<Record<string, unknown>> = [];
+  const chunkSize = 500;
+  for (let index = 0; index < feedItemIds.length; index += chunkSize) {
+    const chunk = feedItemIds.slice(index, index + chunkSize);
+    const { data, error } = await supabase
+      .from("feed_items")
+      .select(
+        "id, source_id, canonical_key, title, category, jurisdiction, audience, summary, eligibility, amount, deadline, geography, status, source_url, keywords, tags, naics_codes, updated_at, created_at",
+      )
+      .in("id", chunk);
+
+    if (error) {
+      throw error;
+    }
+
+    rows.push(...(((data ?? []) as unknown) as Array<Record<string, unknown>>));
+  }
+
+  return rows.map((item) => ({
+    id: item.id as number | string,
+    itemKey: String(item.canonical_key),
+    sourceKey: sourceIdToKey.get(String(item.source_id)) ?? "unknown-source",
+    title: String(item.title),
+    category: String(item.category),
+    jurisdiction: String(item.jurisdiction),
+    audience: String(item.audience ?? ""),
+    summary: String(item.summary ?? ""),
+    eligibility: String(item.eligibility ?? ""),
+    amount: item.amount ? String(item.amount) : null,
+    deadline: item.deadline ? String(item.deadline) : null,
+    geography: String(item.geography ?? ""),
+    status: String(item.status),
+    url: String(item.source_url),
+    keywords: parseArray(item.keywords),
+    tags: parseArray(item.tags),
+    naicsCodes: parseArray(item.naics_codes),
+    updatedAt: String(item.updated_at ?? nowIso()),
+    createdAt: String(item.created_at ?? nowIso()),
+  })) satisfies RawFeedItem[];
+}
+
+export async function buildOpportunityFeedbackProfile(
+  profileId: string | undefined,
+  availableItems: RawFeedItem[],
+) {
+  if (!profileId || !hasSupabaseServiceRoleEnv()) {
+    return null;
+  }
+
+  const stateRows = await listUserOpportunityStates(profileId);
+  if (stateRows.length === 0) {
+    return null;
+  }
+
+  const itemById = new Map(availableItems.map((item) => [String(item.id), item] satisfies [string, RawFeedItem]));
+  const missingIds = stateRows
+    .map((row) => row.feedItemId)
+    .filter((feedItemId) => !itemById.has(feedItemId));
+
+  if (missingIds.length > 0) {
+    const missingItems = await loadSupabaseFeedItemsByIds(Array.from(new Set(missingIds)));
+    for (const item of missingItems) {
+      itemById.set(String(item.id), item);
+    }
+  }
+
+  const positiveTokenWeights = new Map<string, number>();
+  const negativeTokenWeights = new Map<string, number>();
+  const positiveCategories = new Set<string>();
+  const negativeCategories = new Set<string>();
+  const positiveJurisdictions = new Set<string>();
+  const negativeJurisdictions = new Set<string>();
+  const positiveSourceKeys = new Set<string>();
+  const negativeSourceKeys = new Set<string>();
+  const positiveNaicsCodes = new Set<string>();
+  const negativeNaicsCodes = new Set<string>();
+  const currentStateByItemId = new Map(
+    stateRows.map((row) => [row.feedItemId, row] satisfies [string, UserOpportunityStateRecord]),
+  );
+
+  function addWeight(map: Map<string, number>, values: string[], amount: number) {
+    for (const value of values) {
+      map.set(value, (map.get(value) ?? 0) + amount);
+    }
+  }
+
+  function addSetValues(set: Set<string>, values: string[]) {
+    for (const value of values) {
+      if (value.trim()) {
+        set.add(value);
+      }
+    }
+  }
+
+  const positiveStates = new Set<OpportunityStateValue>(["interested", "applied", "waiting", "won"]);
+  const negativeStates = new Set<OpportunityStateValue>(["not-a-fit", "archived"]);
+
+  for (const row of stateRows) {
+    const item = itemById.get(row.feedItemId);
+    if (!item) {
+      continue;
+    }
+
+    const weight =
+      row.state === "applied" || row.state === "won"
+        ? 3
+        : row.state === "interested" || row.state === "waiting"
+          ? 2
+          : row.state === "not-a-fit"
+            ? 3
+            : row.state === "archived"
+              ? 2
+              : 0;
+
+    if (weight === 0) {
+      continue;
+    }
+
+    const feedbackTokens = filterFeedbackTokens(
+      normalizeTokens([
+        row.decisionReason ?? "",
+        row.decisionNote ?? "",
+        ...item.tags,
+        ...item.keywords,
+        item.category,
+        item.title,
+      ]),
+    );
+
+    if (positiveStates.has(row.state)) {
+      addWeight(positiveTokenWeights, feedbackTokens, weight);
+      addSetValues(positiveCategories, [item.category]);
+      addSetValues(positiveJurisdictions, [item.jurisdiction]);
+      addSetValues(positiveSourceKeys, [item.sourceKey]);
+      addSetValues(positiveNaicsCodes, item.naicsCodes);
+      continue;
+    }
+
+    if (negativeStates.has(row.state)) {
+      addWeight(negativeTokenWeights, feedbackTokens, weight);
+      addSetValues(negativeCategories, [item.category]);
+      addSetValues(negativeJurisdictions, [item.jurisdiction]);
+      addSetValues(negativeSourceKeys, [item.sourceKey]);
+      addSetValues(negativeNaicsCodes, item.naicsCodes);
+    }
+  }
+
+  return {
+    currentStateByItemId,
+    positiveTokenWeights,
+    negativeTokenWeights,
+    positiveCategories,
+    negativeCategories,
+    positiveJurisdictions,
+    negativeJurisdictions,
+    positiveSourceKeys,
+    negativeSourceKeys,
+    positiveNaicsCodes,
+    negativeNaicsCodes,
+  } satisfies OpportunityFeedbackProfile;
 }
 
 function getProfile() {
@@ -1073,7 +1301,11 @@ function buildNotifications(items: ScoredItem[], profile: RawCompanyProfile) {
     })) satisfies RawNotification[];
 }
 
-export function scoreItemForProfile(item: RawFeedItem, profile: RawCompanyProfile) {
+export function scoreItemForProfile(
+  item: RawFeedItem,
+  profile: RawCompanyProfile,
+  feedbackProfile?: OpportunityFeedbackProfile | null,
+) {
   const searchable = buildSearchableText(item);
   const reasons: string[] = [];
   let score = 0;
@@ -1136,8 +1368,108 @@ export function scoreItemForProfile(item: RawFeedItem, profile: RawCompanyProfil
     reasons.push("Puerto Rico relevance");
   }
 
+  if (feedbackProfile) {
+    const currentState = feedbackProfile.currentStateByItemId.get(String(item.id))?.state ?? null;
+    const itemTokens = new Set(
+      filterFeedbackTokens(
+        normalizeTokens([
+          item.title,
+          item.summary,
+          item.eligibility,
+          item.category,
+          ...item.tags,
+          ...item.keywords,
+        ]),
+      ),
+    );
+
+    const positiveTokenOverlap = Array.from(itemTokens).filter(
+      (token) => (feedbackProfile.positiveTokenWeights.get(token) ?? 0) >= 2,
+    );
+    const negativeTokenOverlap = Array.from(itemTokens).filter(
+      (token) => (feedbackProfile.negativeTokenWeights.get(token) ?? 0) >= 2,
+    );
+
+    if (positiveTokenOverlap.length > 0) {
+      score += Math.min(
+        16,
+        positiveTokenOverlap.reduce(
+          (total, token) => total + Math.min(4, feedbackProfile.positiveTokenWeights.get(token) ?? 0),
+          0,
+        ),
+      );
+      reasons.push(`Aligns with prior positive feedback: ${positiveTokenOverlap.slice(0, 3).join(", ")}`);
+    }
+
+    if (negativeTokenOverlap.length > 0) {
+      score -= Math.min(
+        20,
+        negativeTokenOverlap.reduce(
+          (total, token) => total + Math.min(5, feedbackProfile.negativeTokenWeights.get(token) ?? 0),
+          0,
+        ),
+      );
+      reasons.push(`Similar to previous not-a-fit feedback: ${negativeTokenOverlap.slice(0, 3).join(", ")}`);
+    }
+
+    if (feedbackProfile.positiveCategories.has(item.category)) {
+      score += 6;
+      reasons.push(`Matches a preferred category from prior reviews: ${item.category}`);
+    }
+
+    if (feedbackProfile.negativeCategories.has(item.category)) {
+      score -= 10;
+      reasons.push(`Category resembles previous not-a-fit decisions: ${item.category}`);
+    }
+
+    if (feedbackProfile.positiveJurisdictions.has(item.jurisdiction)) {
+      score += 4;
+    }
+
+    if (feedbackProfile.negativeJurisdictions.has(item.jurisdiction)) {
+      score -= 6;
+    }
+
+    if (feedbackProfile.positiveSourceKeys.has(item.sourceKey)) {
+      score += 4;
+      reasons.push("Source resembles previously useful opportunities");
+    }
+
+    if (feedbackProfile.negativeSourceKeys.has(item.sourceKey)) {
+      score -= 6;
+    }
+
+    if (item.naicsCodes.some((code) => feedbackProfile.positiveNaicsCodes.has(code))) {
+      score += 5;
+    }
+
+    if (item.naicsCodes.some((code) => feedbackProfile.negativeNaicsCodes.has(code))) {
+      score -= 6;
+    }
+
+    if (currentState === "interested") {
+      score -= 8;
+      reasons.push("Already marked interested");
+    } else if (currentState === "applied") {
+      score -= 18;
+      reasons.push("Already applied");
+    } else if (currentState === "waiting") {
+      score -= 14;
+      reasons.push("Already waiting on a response");
+    } else if (currentState === "won") {
+      score -= 20;
+      reasons.push("Already marked won");
+    } else if (currentState === "not-a-fit") {
+      score -= 26;
+      reasons.push("Already marked not a fit");
+    } else if (currentState === "archived") {
+      score -= 18;
+      reasons.push("Already archived");
+    }
+  }
+
   return {
-    score: Math.min(100, score),
+    score: Math.max(0, Math.min(100, score)),
     reasons: reasons.slice(0, 4),
   };
 }
@@ -1497,13 +1829,12 @@ export async function getFundingWorkspaceData(
   const baseItems =
     remoteWorkspace?.items ??
     getFeedItems({ page: 1, pageSize: Math.max(pageSize, sqliteTotalItems || pageSize) });
+  const feedbackProfile = await buildOpportunityFeedbackProfile(options?.viewerProfileId, baseItems);
   const opportunityStates =
     options?.viewerProfileId && hasSupabaseServiceRoleEnv()
-      ? await import("@/lib/opportunity-state").then(({ listUserOpportunityStates }) =>
-          listUserOpportunityStates(
-            options.viewerProfileId!,
-            (remoteWorkspace?.items ?? baseItems).map((item) => String(item.id)),
-          ),
+      ? await listUserOpportunityStates(
+          options.viewerProfileId,
+          (remoteWorkspace?.items ?? baseItems).map((item) => String(item.id)),
         )
       : [];
   const opportunityStateByItemId = new Map(
@@ -1511,7 +1842,7 @@ export async function getFundingWorkspaceData(
   );
   const scopedItems = (remoteWorkspace?.items ?? baseItems)
     .map((item) => {
-      const scored = scoreItemForProfile(item, profile);
+      const scored = scoreItemForProfile(item, profile, feedbackProfile);
       const savedState = opportunityStateByItemId.get(String(item.id));
       return {
         ...item,
