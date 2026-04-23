@@ -21,6 +21,10 @@ type DailySummaryPayload = {
   unevaluatedItems: number;
   evaluatedItems: number;
   appliedItems: number;
+  topReviewReasons: Array<{
+    reason: string;
+    count: number;
+  }>;
   newItems: number;
   recommendedItems: number;
   items: DailySummaryItem[];
@@ -52,6 +56,7 @@ function buildTextBody(payload: DailySummaryPayload) {
     `Still to evaluate: ${payload.unevaluatedItems}\n` +
     `Already evaluated: ${payload.evaluatedItems}\n` +
     `Applied: ${payload.appliedItems}\n` +
+    `Top review reasons: ${payload.topReviewReasons.length > 0 ? payload.topReviewReasons.map((entry) => `${entry.reason} (${entry.count})`).join(", ") : "No review reasons saved yet"}\n` +
     `New since last summary: ${payload.newItems}\n` +
     `Recommended unevaluated matches: ${payload.recommendedItems}\n` +
     `Open full ranked feed: ${payload.opportunitiesUrl}\n` +
@@ -115,6 +120,7 @@ function buildHtmlBody(payload: DailySummaryPayload) {
         <li>Still to evaluate: ${payload.unevaluatedItems}</li>
         <li>Already evaluated: ${payload.evaluatedItems}</li>
         <li>Applied: ${payload.appliedItems}</li>
+        <li>Top review reasons: ${payload.topReviewReasons.length > 0 ? payload.topReviewReasons.map((entry) => `${entry.reason} (${entry.count})`).join(", ") : "No review reasons saved yet"}</li>
         <li>New since last summary: ${payload.newItems}</li>
         <li>Recommended unevaluated matches: ${payload.recommendedItems}</li>
       </ul>

@@ -166,6 +166,25 @@ function stripNaicsReason(reasons: string[]) {
   return reasons.filter((reason) => !reason.startsWith("NAICS match:"));
 }
 
+function buildReasonCounts(
+  items: Array<{ opportunityState?: { decisionReason: string | null } | null }>,
+) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const reason = item.opportunityState?.decisionReason?.trim();
+    if (!reason) {
+      continue;
+    }
+
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+    .slice(0, 5);
+}
+
 async function listAuthUsers() {
   const admin = getSupabaseAdminClient();
   const users: AuthUserSummary[] = [];
@@ -425,6 +444,7 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       isOpportunityEvaluated(item.opportunityState?.state),
     );
     const appliedItems = scopedItems.filter((item) => item.opportunityState?.state === "applied").length;
+    const topReviewReasons = buildReasonCounts(scopedItems);
     const recommendedItems = unevaluatedItems.filter((item) => item.relevanceScore >= 55).length;
     const newItems = unevaluatedItems.filter((item) => {
       if (!profile.lastDailySummaryAt) {
@@ -462,6 +482,7 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       unevaluatedItems: unevaluatedItems.length,
       evaluatedItems: evaluatedItems.length,
       appliedItems,
+      topReviewReasons,
       newItems,
       recommendedItems,
       items: unevaluatedItems.slice(0, 5).map((item) => ({

@@ -156,6 +156,35 @@ export function FundingOpsDashboardView({
         <section className="panel">
           <div className="section-heading">
             <div>
+              <p className="eyebrow">Review Reasons</p>
+              <h2>What users are actually deciding in the current opportunity set.</h2>
+            </div>
+            <Link className="secondary-link" href="/opportunities">
+              Review Opportunities
+            </Link>
+          </div>
+          <div className="list">
+            {workspace.metrics.reviewReasons.length === 0 ? (
+              <div className="empty">No structured review reasons saved yet.</div>
+            ) : (
+              workspace.metrics.reviewReasons.map((entry) => (
+                <article className="list-item" key={entry.reason}>
+                  <div className="list-header">
+                    <strong>{entry.reason}</strong>
+                    <span className="pill">{entry.count}</span>
+                  </div>
+                  <p>
+                    {entry.count} opportunity{entry.count === 1 ? "" : "ies"} currently carry this decision reason.
+                  </p>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-heading">
+            <div>
               <p className="eyebrow">Source Health</p>
               <h2>Keep the feed trustworthy without making source inventory its own page.</h2>
             </div>

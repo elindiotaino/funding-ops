@@ -162,6 +162,10 @@ export type FundingWorkspaceData = {
     unevaluatedItems: number;
     evaluatedItems: number;
     appliedItems: number;
+    reviewReasons: Array<{
+      reason: string;
+      count: number;
+    }>;
     totalNotifications: number;
     highlyRelevantItems: number;
     sourcesDueForRefresh: number;
@@ -614,6 +618,23 @@ function buildSearchableText(item: RawFeedItem) {
       ...item.keywords,
     ].join(" "),
   );
+}
+
+function buildReviewReasonCounts(items: ScoredItem[]) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const reason = item.opportunityState?.decisionReason?.trim();
+    if (!reason) {
+      continue;
+    }
+
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+    .slice(0, 5);
 }
 
 async function loadSupabaseFeedItemsByIds(feedItemIds: string[]) {
@@ -1789,6 +1810,7 @@ export async function getDailySummaryEmailPayload(profileOverride?: RawCompanyPr
       unevaluatedItems: unevaluatedItems.length,
       evaluatedItems: matchingItems.length - unevaluatedItems.length,
       appliedItems: matchingItems.filter((item) => item.opportunityState?.state === "applied").length,
+      topReviewReasons: buildReviewReasonCounts(matchingItems),
       newItems: recommendedItems.length,
       recommendedItems: recommendedItems.length,
       items: recommendedItems.slice(0, 5).map((item) => ({
@@ -1874,6 +1896,7 @@ export async function getFundingWorkspaceData(
     isOpportunityEvaluated(item.opportunityState?.state),
   ).length;
   const appliedItems = scopedItems.filter((item) => item.opportunityState?.state === "applied").length;
+  const reviewReasons = buildReviewReasonCounts(scopedItems);
   const paginatedItems = scopedItems.slice((page - 1) * pageSize, page * pageSize);
   const notifications = buildNotifications(paginatedItems, profile);
 
@@ -1916,6 +1939,7 @@ export async function getFundingWorkspaceData(
       unevaluatedItems,
       evaluatedItems,
       appliedItems,
+      reviewReasons,
       totalNotifications: notifications.length,
       highlyRelevantItems: scopedItems.filter((item) => item.relevanceScore >= 55).length,
       sourcesDueForRefresh: sources.filter((source) => !source.lastSyncedAt).length,
