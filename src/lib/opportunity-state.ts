@@ -13,6 +13,16 @@ export const opportunityStates = [
 
 export type OpportunityStateValue = (typeof opportunityStates)[number];
 
+export const unevaluatedOpportunityStates = ["new", "to-evaluate"] as const;
+export const evaluatedOpportunityStates = [
+  "interested",
+  "applied",
+  "waiting",
+  "not-a-fit",
+  "archived",
+  "won",
+] as const;
+
 export type UserOpportunityStateRecord = {
   id: string;
   profileId: string;
@@ -131,4 +141,12 @@ export async function upsertUserOpportunityStates(
   }
 
   return listUserOpportunityStates(profileId, input.feedItemIds);
+}
+
+export function isOpportunityEvaluated(state: OpportunityStateValue | null | undefined) {
+  return Boolean(state && evaluatedOpportunityStates.includes(state as (typeof evaluatedOpportunityStates)[number]));
+}
+
+export function isOpportunityUnevaluated(state: OpportunityStateValue | null | undefined) {
+  return !state || unevaluatedOpportunityStates.includes(state as (typeof unevaluatedOpportunityStates)[number]);
 }

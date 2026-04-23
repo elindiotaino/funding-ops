@@ -89,16 +89,24 @@ export function FundingOpsDashboardView({
           <strong>{workspace.metrics.totalSources}</strong>
         </div>
         <div className="stat-card">
-          <span>Feed Items</span>
+          <span>Unevaluated</span>
+          <strong>{workspace.metrics.unevaluatedItems}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Evaluated</span>
+          <strong>{workspace.metrics.evaluatedItems}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Applied</span>
+          <strong>{workspace.metrics.appliedItems}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Total Feed</span>
           <strong>{workspace.metrics.totalItems}</strong>
         </div>
         <div className="stat-card">
           <span>High Relevance</span>
           <strong>{workspace.metrics.highlyRelevantItems}</strong>
-        </div>
-        <div className="stat-card">
-          <span>Programs</span>
-          <strong>{initialDashboard.metrics.totalPrograms}</strong>
         </div>
         <div className="stat-card">
           <span>Open Tasks</span>
@@ -107,6 +115,10 @@ export function FundingOpsDashboardView({
         <div className="stat-card">
           <span>Refresh Scope</span>
           <strong>{workspace.refreshScope.naicsCodes.length > 0 ? workspace.refreshScope.naicsCodes.length : "All"}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Programs</span>
+          <strong>{initialDashboard.metrics.totalPrograms}</strong>
         </div>
       </section>
 

@@ -8,6 +8,7 @@ import {
 } from "@/lib/feed";
 import { formatNaicsLabel } from "@/lib/naics";
 import { markFundingProfileDailySummarySent } from "@/lib/funding-profile";
+import { isOpportunityEvaluated, isOpportunityUnevaluated, listUserOpportunityStates } from "@/lib/opportunity-state";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseServiceRoleEnv } from "@/lib/supabase/env";
 
@@ -79,6 +80,9 @@ type DailySummarySweepResult = {
     status: "sent" | "skipped" | "failed";
     reason?: string;
     totalAvailable?: number;
+    unevaluatedItems?: number;
+    evaluatedItems?: number;
+    appliedItems?: number;
     newItems?: number;
     recommendedItems?: number;
   }>;
@@ -392,13 +396,17 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       continue;
     }
 
+    const stateRows = await listUserOpportunityStates(profileId);
+    const stateByItemId = new Map(stateRows.map((row) => [row.feedItemId, row]));
     const scopedItems = feedItems
       .map((item) => {
         const scored = scoreItemForProfile(item, profile);
+        const opportunityState = stateByItemId.get(String(item.id)) ?? null;
         return {
           ...item,
           relevanceScore: scored.score,
           reasons: scored.reasons,
+          opportunityState,
         };
       })
       .filter((item) => item.relevanceScore > 0)
@@ -406,8 +414,15 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       .sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
 
     const totalAvailable = scopedItems.length;
-    const recommendedItems = scopedItems.filter((item) => item.relevanceScore >= 55).length;
-    const newItems = scopedItems.filter((item) => {
+    const unevaluatedItems = scopedItems.filter((item) =>
+      isOpportunityUnevaluated(item.opportunityState?.state),
+    );
+    const evaluatedItems = scopedItems.filter((item) =>
+      isOpportunityEvaluated(item.opportunityState?.state),
+    );
+    const appliedItems = scopedItems.filter((item) => item.opportunityState?.state === "applied").length;
+    const recommendedItems = unevaluatedItems.filter((item) => item.relevanceScore >= 55).length;
+    const newItems = unevaluatedItems.filter((item) => {
       if (!profile.lastDailySummaryAt) {
         return true;
       }
@@ -423,6 +438,9 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
         status: "skipped",
         reason: "No matching items are currently available.",
         totalAvailable,
+        unevaluatedItems: unevaluatedItems.length,
+        evaluatedItems: evaluatedItems.length,
+        appliedItems,
         newItems,
         recommendedItems,
       });
@@ -437,9 +455,12 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       appUrl: process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://hub.joche.dev/funding-ops",
       opportunitiesUrl: `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://hub.joche.dev/funding-ops"}/opportunities`,
       totalAvailable,
+      unevaluatedItems: unevaluatedItems.length,
+      evaluatedItems: evaluatedItems.length,
+      appliedItems,
       newItems,
       recommendedItems,
-      items: scopedItems.slice(0, 5).map((item) => ({
+      items: unevaluatedItems.slice(0, 5).map((item) => ({
         title: item.title,
         url: item.url,
         relevanceScore: item.relevanceScore,
@@ -458,6 +479,9 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
         email,
         status: "sent",
         totalAvailable,
+        unevaluatedItems: unevaluatedItems.length,
+        evaluatedItems: evaluatedItems.length,
+        appliedItems,
         newItems,
         recommendedItems,
       });
@@ -472,6 +496,9 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
         status: "skipped",
         reason: emailResult.reason,
         totalAvailable,
+        unevaluatedItems: unevaluatedItems.length,
+        evaluatedItems: evaluatedItems.length,
+        appliedItems,
         newItems,
         recommendedItems,
       });
@@ -485,6 +512,9 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       status: "failed",
       reason: "SMTP delivery failed.",
       totalAvailable,
+      unevaluatedItems: unevaluatedItems.length,
+      evaluatedItems: evaluatedItems.length,
+      appliedItems,
       newItems,
       recommendedItems,
     });

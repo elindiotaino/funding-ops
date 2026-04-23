@@ -18,6 +18,9 @@ type DailySummaryPayload = {
   appUrl: string;
   opportunitiesUrl: string;
   totalAvailable: number;
+  unevaluatedItems: number;
+  evaluatedItems: number;
+  appliedItems: number;
   newItems: number;
   recommendedItems: number;
   items: DailySummaryItem[];
@@ -45,12 +48,15 @@ function buildTextBody(payload: DailySummaryPayload) {
     `Daily Funding Ops summary for ${payload.companyName}\n` +
     `Snapshot date: ${payload.snapshotDate}\n` +
     `Account NAICS scope: ${payload.profileNaicsLabels.length > 0 ? payload.profileNaicsLabels.join(", ") : "No NAICS codes selected"}\n` +
-    `Available to evaluate: ${payload.totalAvailable}\n` +
+    `Total matching opportunities: ${payload.totalAvailable}\n` +
+    `Still to evaluate: ${payload.unevaluatedItems}\n` +
+    `Already evaluated: ${payload.evaluatedItems}\n` +
+    `Applied: ${payload.appliedItems}\n` +
     `New since last summary: ${payload.newItems}\n` +
-    `Recommended matches: ${payload.recommendedItems}\n` +
+    `Recommended unevaluated matches: ${payload.recommendedItems}\n` +
     `Open full ranked feed: ${payload.opportunitiesUrl}\n` +
     `Open app home: ${payload.appUrl}\n\n` +
-    `Top relevant items:\n`;
+    `Top unevaluated items:\n`;
   const items = payload.items
     .map(
       (item, index) =>
@@ -105,9 +111,12 @@ function buildHtmlBody(payload: DailySummaryPayload) {
       <ul style="padding-left:20px;">
         <li>Snapshot date: ${payload.snapshotDate}</li>
         <li>Account NAICS scope: ${payload.profileNaicsLabels.length > 0 ? payload.profileNaicsLabels.join(", ") : "No NAICS codes selected"}</li>
-        <li>Available to evaluate: ${payload.totalAvailable}</li>
+        <li>Total matching opportunities: ${payload.totalAvailable}</li>
+        <li>Still to evaluate: ${payload.unevaluatedItems}</li>
+        <li>Already evaluated: ${payload.evaluatedItems}</li>
+        <li>Applied: ${payload.appliedItems}</li>
         <li>New since last summary: ${payload.newItems}</li>
-        <li>Recommended matches: ${payload.recommendedItems}</li>
+        <li>Recommended unevaluated matches: ${payload.recommendedItems}</li>
       </ul>
       <ol style="padding-left:20px;">${items}</ol>
       <p style="margin-top:24px;">

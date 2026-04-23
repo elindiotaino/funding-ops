@@ -1,5 +1,10 @@
 import { sqlite } from "@/db";
-import type { OpportunityStateValue, UserOpportunityStateRecord } from "@/lib/opportunity-state";
+import {
+  isOpportunityEvaluated,
+  isOpportunityUnevaluated,
+  type OpportunityStateValue,
+  type UserOpportunityStateRecord,
+} from "@/lib/opportunity-state";
 import {
   findCompatibleNaicsCodes,
   formatNaicsLabel,
@@ -153,6 +158,9 @@ export type FundingWorkspaceData = {
   metrics: {
     totalSources: number;
     totalItems: number;
+    unevaluatedItems: number;
+    evaluatedItems: number;
+    appliedItems: number;
     totalNotifications: number;
     highlyRelevantItems: number;
     sourcesDueForRefresh: number;
@@ -1406,10 +1414,12 @@ function startOfUtcDay(value: string) {
 
 export async function getDailySummaryEmailPayload(profileOverride?: RawCompanyProfile) {
   const profile = profileOverride ?? getProfile();
-  const items = (await getFundingWorkspaceData(undefined, profile)).items
-    .filter((item) => item.relevanceScore >= 55)
-    .filter((item) => matchesEmailPreferencesForProfile(item, profile))
-    .slice(0, 5);
+  const workspace = await getFundingWorkspaceData(undefined, profile);
+  const matchingItems = workspace.items.filter((item) => matchesEmailPreferencesForProfile(item, profile));
+  const unevaluatedItems = matchingItems.filter((item) =>
+    isOpportunityUnevaluated(item.opportunityState?.state),
+  );
+  const recommendedItems = unevaluatedItems.filter((item) => item.relevanceScore >= 55);
 
   if (!profile.dailySummaryEnabled) {
     return { shouldSend: false as const, reason: "Daily summary is disabled." };
@@ -1423,7 +1433,7 @@ export async function getDailySummaryEmailPayload(profileOverride?: RawCompanyPr
     return { shouldSend: false as const, reason: "Notifications are muted." };
   }
 
-  if (items.length === 0) {
+  if (matchingItems.length === 0) {
     return { shouldSend: false as const, reason: "No relevant items match the email update filters." };
   }
 
@@ -1439,7 +1449,17 @@ export async function getDailySummaryEmailPayload(profileOverride?: RawCompanyPr
     payload: {
       companyName: profile.companyName,
       email: profile.notificationEmail,
-      items: items.map((item) => ({
+      snapshotDate: new Date().toISOString().slice(0, 10),
+      profileNaicsLabels: profile.naicsCodes.map((code) => formatNaicsLabel(code)),
+      appUrl: process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://hub.joche.dev/funding-ops",
+      opportunitiesUrl: `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://hub.joche.dev/funding-ops"}/opportunities`,
+      totalAvailable: matchingItems.length,
+      unevaluatedItems: unevaluatedItems.length,
+      evaluatedItems: matchingItems.length - unevaluatedItems.length,
+      appliedItems: matchingItems.filter((item) => item.opportunityState?.state === "applied").length,
+      newItems: recommendedItems.length,
+      recommendedItems: recommendedItems.length,
+      items: recommendedItems.slice(0, 5).map((item) => ({
         title: item.title,
         url: item.url,
         relevanceScore: item.relevanceScore,
@@ -1516,6 +1536,13 @@ export async function getFundingWorkspaceData(
       )
     .sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
   const totalItems = scopedItems.length;
+  const unevaluatedItems = scopedItems.filter((item) =>
+    isOpportunityUnevaluated(item.opportunityState?.state),
+  ).length;
+  const evaluatedItems = scopedItems.filter((item) =>
+    isOpportunityEvaluated(item.opportunityState?.state),
+  ).length;
+  const appliedItems = scopedItems.filter((item) => item.opportunityState?.state === "applied").length;
   const paginatedItems = scopedItems.slice((page - 1) * pageSize, page * pageSize);
   const notifications = buildNotifications(paginatedItems, profile);
 
@@ -1555,6 +1582,9 @@ export async function getFundingWorkspaceData(
     metrics: {
       totalSources: sources.length,
       totalItems,
+      unevaluatedItems,
+      evaluatedItems,
+      appliedItems,
       totalNotifications: notifications.length,
       highlyRelevantItems: scopedItems.filter((item) => item.relevanceScore >= 55).length,
       sourcesDueForRefresh: sources.filter((source) => !source.lastSyncedAt).length,
