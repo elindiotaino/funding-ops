@@ -406,6 +406,10 @@ button:hover {
   grid-column: 1 / -1;
 }
 
+.opportunity-bulk-panel__form .full {
+  grid-column: 1 / -1;
+}
+
 .opportunity-bulk-panel__buttons {
   grid-column: 1 / -1;
   display: flex;

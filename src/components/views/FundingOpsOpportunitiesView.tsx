@@ -89,6 +89,17 @@ const opportunityStateToneMap = new Map(
   opportunityStateOptions.map((option) => [option.value, option.tone] satisfies [OpportunityStateValue, string]),
 );
 
+const decisionReasonOptions: Record<OpportunityStateValue, string[]> = {
+  new: ["Needs initial review", "Awaiting prioritization"],
+  "to-evaluate": ["Needs manual review", "Need eligibility check", "Need budget review"],
+  interested: ["Strong fit", "Worth pursuing", "Good strategic match", "Prepare application"],
+  applied: ["Application submitted", "Submitted and tracking response", "Submitted with follow-up pending"],
+  waiting: ["Awaiting response", "Awaiting agency update", "Follow-up scheduled"],
+  "not-a-fit": ["Wrong geography", "Eligibility mismatch", "Weak strategic fit", "Too late", "Low ROI"],
+  archived: ["Duplicate", "Superseded", "Already handled", "No longer relevant"],
+  won: ["Awarded", "Selected for funding", "Approved"],
+};
+
 export function FundingOpsOpportunitiesView({
   appUrl,
   basePath,
@@ -133,6 +144,7 @@ export function FundingOpsOpportunitiesView({
   const allVisibleSelected =
     allVisibleItemIds.length > 0 &&
     allVisibleItemIds.every((itemId) => selectedItemIds.includes(itemId));
+  const activeDecisionReasonOptions = decisionReasonOptions[bulkState];
 
   useEffect(() => {
     setWorkspace(initialWorkspace);
@@ -606,13 +618,34 @@ export function FundingOpsOpportunitiesView({
                 </select>
               </label>
               <label>
-                <span>Reason</span>
+                <span>Primary reason</span>
                 <input
                   value={bulkDecisionReason}
                   onChange={(event) => setBulkDecisionReason(event.target.value)}
                   placeholder="Wrong geography, duplicate, strong fit, preparing application"
                 />
               </label>
+              <div className="selection-group full">
+                <div className="selection-group__header">
+                  <span>Suggested reasons</span>
+                  <strong>{activeDecisionReasonOptions.length} options</strong>
+                </div>
+                <div className="chip-grid">
+                  {activeDecisionReasonOptions.map((reason) => {
+                    const active = bulkDecisionReason === reason;
+                    return (
+                      <button
+                        key={`${bulkState}-${reason}`}
+                        type="button"
+                        className={`filter-chip ${active ? "filter-chip--active" : ""}`}
+                        onClick={() => setBulkDecisionReason(active ? "" : reason)}
+                      >
+                        {reason}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <label className="full">
                 <span>Shared note</span>
                 <textarea
@@ -736,6 +769,11 @@ export function FundingOpsOpportunitiesView({
                       </button>
                     ))}
                   </div>
+                  {item.opportunityState ? (
+                    <p className="ranked-item__summary">
+                      Last reviewed {formatDateLabel(item.opportunityState.updatedAt)}.
+                    </p>
+                  ) : null}
                   <p>
                     <a href={item.url} target="_blank" rel="noreferrer">
                       Open item source
