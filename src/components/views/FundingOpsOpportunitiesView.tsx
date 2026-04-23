@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { FundingWorkspaceData } from "@/lib/feed";
 import { formatNaicsLabel } from "@/lib/naics";
+import type {
+  OpportunityStateValue,
+  UserOpportunityStateRecord,
+} from "@/lib/opportunity-state";
 import {
   FilterState,
   formatDateLabel,
@@ -58,6 +62,33 @@ type FeedItemDetailResponse = {
   };
 };
 
+type OpportunityStateResponse = {
+  states: UserOpportunityStateRecord[];
+};
+
+const opportunityStateOptions: Array<{
+  value: OpportunityStateValue;
+  label: string;
+  tone: "neutral" | "active" | "positive" | "muted";
+}> = [
+  { value: "new", label: "New", tone: "neutral" },
+  { value: "to-evaluate", label: "To Evaluate", tone: "active" },
+  { value: "interested", label: "Interested", tone: "active" },
+  { value: "applied", label: "Applied", tone: "positive" },
+  { value: "waiting", label: "Waiting", tone: "active" },
+  { value: "not-a-fit", label: "Not A Fit", tone: "muted" },
+  { value: "archived", label: "Archived", tone: "muted" },
+  { value: "won", label: "Won", tone: "positive" },
+];
+
+const opportunityStateLabelMap = new Map(
+  opportunityStateOptions.map((option) => [option.value, option.label] satisfies [OpportunityStateValue, string]),
+);
+
+const opportunityStateToneMap = new Map(
+  opportunityStateOptions.map((option) => [option.value, option.tone] satisfies [OpportunityStateValue, string]),
+);
+
 export function FundingOpsOpportunitiesView({
   appUrl,
   basePath,
@@ -70,8 +101,13 @@ export function FundingOpsOpportunitiesView({
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBrowsingHistory, setIsBrowsingHistory] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [bulkState, setBulkState] = useState<OpportunityStateValue>("to-evaluate");
+  const [bulkDecisionReason, setBulkDecisionReason] = useState("");
+  const [bulkDecisionNote, setBulkDecisionNote] = useState("");
+  const [isSavingOpportunityState, setIsSavingOpportunityState] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [selectedItemDetail, setSelectedItemDetail] = useState<FeedItemDetailResponse | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
@@ -90,6 +126,13 @@ export function FundingOpsOpportunitiesView({
     () => new Map(workspace.sources.map((source) => [source.sourceKey, source.name])),
     [workspace.sources],
   );
+  const allVisibleItemIds = useMemo(
+    () => filteredItems.map((item) => String(item.id)),
+    [filteredItems],
+  );
+  const allVisibleSelected =
+    allVisibleItemIds.length > 0 &&
+    allVisibleItemIds.every((itemId) => selectedItemIds.includes(itemId));
 
   useEffect(() => {
     setWorkspace(initialWorkspace);
@@ -98,6 +141,115 @@ export function FundingOpsOpportunitiesView({
   useEffect(() => {
     setIsBrowsingHistory(false);
   }, [workspace.history.selectedSnapshotDate, workspace.history.selectedSourceKeys, workspace.pagination.page]);
+
+  useEffect(() => {
+    setSelectedItemIds((current) =>
+      current.filter((itemId) => workspace.items.some((item) => String(item.id) === itemId)),
+    );
+  }, [workspace.items]);
+
+  function mergeStatesIntoWorkspace(states: UserOpportunityStateRecord[]) {
+    const stateByItemId = new Map(
+      states.map((state) => [state.feedItemId, state] satisfies [string, UserOpportunityStateRecord]),
+    );
+
+    setWorkspace((current) => ({
+      ...current,
+      items: current.items.map((item) => {
+        const state = stateByItemId.get(String(item.id));
+        if (!state) {
+          return item;
+        }
+
+        return {
+          ...item,
+          opportunityState: {
+            state: state.state,
+            decisionReason: state.decisionReason,
+            decisionNote: state.decisionNote,
+            appliedAt: state.appliedAt,
+            followUpAt: state.followUpAt,
+            archivedAt: state.archivedAt,
+            updatedAt: state.updatedAt,
+          },
+        };
+      }),
+    }));
+  }
+
+  function toggleItemSelection(itemId: string) {
+    setSelectedItemIds((current) =>
+      current.includes(itemId)
+        ? current.filter((entry) => entry !== itemId)
+        : [...current, itemId],
+    );
+  }
+
+  function toggleSelectVisibleItems() {
+    setSelectedItemIds((current) => {
+      if (allVisibleSelected) {
+        return current.filter((itemId) => !allVisibleItemIds.includes(itemId));
+      }
+
+      return Array.from(new Set([...current, ...allVisibleItemIds]));
+    });
+  }
+
+  async function saveOpportunityState(
+    feedItemIds: string[],
+    overrides?: {
+      state?: OpportunityStateValue;
+      decisionReason?: string;
+      decisionNote?: string;
+    },
+  ) {
+    if (feedItemIds.length === 0) {
+      return;
+    }
+
+    const nextState = overrides?.state ?? bulkState;
+    const nextDecisionReason = overrides?.decisionReason ?? bulkDecisionReason;
+    const nextDecisionNote = overrides?.decisionNote ?? bulkDecisionNote;
+
+    setIsSavingOpportunityState(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch(`${basePath}/api/opportunity-states`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          feedItemIds,
+          state: nextState,
+          decisionReason: nextDecisionReason.trim() || null,
+          decisionNote: nextDecisionNote.trim() || null,
+          appliedAt: nextState === "applied" ? new Date().toISOString() : null,
+          archivedAt: nextState === "archived" ? new Date().toISOString() : null,
+        }),
+      });
+      const payload = (await response.json()) as OpportunityStateResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not save opportunity state.");
+      }
+
+      mergeStatesIntoWorkspace(payload.states);
+      setMessage(
+        `${feedItemIds.length} opportunity${feedItemIds.length === 1 ? "" : "ies"} marked ${opportunityStateLabelMap
+          .get(nextState)
+          ?.toLowerCase()}.`,
+      );
+      setSelectedItemIds([]);
+      setBulkDecisionReason("");
+      setBulkDecisionNote("");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save opportunity state.");
+    } finally {
+      setIsSavingOpportunityState(false);
+    }
+  }
 
   function updateHistoryRoute(next: { snapshotDate?: string | null; sourceKeys?: string[]; page?: number }) {
     const params = new URLSearchParams(searchParams.toString());
@@ -167,13 +319,13 @@ export function FundingOpsOpportunitiesView({
   }
 
   function openDetailModal(itemId: string) {
-    setSelectedItemId(itemId);
+    setDetailItemId(itemId);
     void loadItemDetail(itemId, "load");
     void loadItemDetail(itemId, "refresh");
   }
 
   function closeDetailModal() {
-    setSelectedItemId(null);
+    setDetailItemId(null);
     setSelectedItemDetail(null);
     setDetailError(null);
     setIsLoadingDetail(false);
@@ -413,6 +565,83 @@ export function FundingOpsOpportunitiesView({
             <span>{filters.onlyRecommended ? "Recommended only" : "All relevance levels"}</span>
           </div>
         </div>
+        <div className="opportunity-review-toolbar">
+          <div>
+            <p className="eyebrow">Opportunity Review</p>
+            <h3>Select one or more items, then apply a shared state and note.</h3>
+            <p className="ranked-item__summary">
+              Use this to keep evaluation decisions consistent before the kanban view lands.
+            </p>
+          </div>
+          <div className="opportunity-review-toolbar__actions">
+            <button type="button" className="secondary-link" onClick={toggleSelectVisibleItems}>
+              {allVisibleSelected ? "Clear page selection" : "Select this page"}
+            </button>
+            <span className="opportunity-review-toolbar__count">
+              {selectedItemIds.length} selected
+            </span>
+          </div>
+        </div>
+        {selectedItemIds.length > 0 ? (
+          <div className="opportunity-bulk-panel">
+            <div className="opportunity-bulk-panel__header">
+              <strong>Bulk review actions</strong>
+              <span>
+                Applying changes to {selectedItemIds.length} selected opportunity
+                {selectedItemIds.length === 1 ? "" : "ies"}.
+              </span>
+            </div>
+            <div className="opportunity-bulk-panel__form">
+              <label>
+                <span>State</span>
+                <select
+                  value={bulkState}
+                  onChange={(event) => setBulkState(event.target.value as OpportunityStateValue)}
+                >
+                  {opportunityStateOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Reason</span>
+                <input
+                  value={bulkDecisionReason}
+                  onChange={(event) => setBulkDecisionReason(event.target.value)}
+                  placeholder="Wrong geography, duplicate, strong fit, preparing application"
+                />
+              </label>
+              <label className="full">
+                <span>Shared note</span>
+                <textarea
+                  rows={3}
+                  value={bulkDecisionNote}
+                  onChange={(event) => setBulkDecisionNote(event.target.value)}
+                  placeholder="Add context about why these opportunities do or do not fit this account."
+                />
+              </label>
+              <div className="opportunity-bulk-panel__buttons">
+                <button
+                  type="button"
+                  onClick={() => void saveOpportunityState(selectedItemIds)}
+                  disabled={isSavingOpportunityState}
+                >
+                  {isSavingOpportunityState ? "Saving..." : "Save review state"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-link"
+                  onClick={() => setSelectedItemIds([])}
+                  disabled={isSavingOpportunityState}
+                >
+                  Clear selection
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="ranked-list">
           {filteredItems.length === 0 ? (
             <div className="empty">No feed items match the current filters.</div>
@@ -420,7 +649,15 @@ export function FundingOpsOpportunitiesView({
             filteredItems.map((item, index) => (
               <article className="ranked-item" key={item.id}>
                 <div className="ranked-item__order">
-                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <label className="ranked-item__selector">
+                    <input
+                      type="checkbox"
+                      checked={selectedItemIds.includes(String(item.id))}
+                      onChange={() => toggleItemSelection(String(item.id))}
+                      aria-label={`Select ${item.title}`}
+                    />
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                  </label>
                 </div>
                 <div className="ranked-item__body">
                   <div className="ranked-item__header">
@@ -437,12 +674,29 @@ export function FundingOpsOpportunitiesView({
                     <span>{prettifyLabel(item.category)}</span>
                     <span>{item.jurisdiction}</span>
                     <span>{formatDateLabel(item.deadline)}</span>
+                    <span
+                      className={`opportunity-state-pill opportunity-state-pill--${
+                        opportunityStateToneMap.get(item.opportunityState?.state ?? "new") ?? "neutral"
+                      }`}
+                    >
+                      {opportunityStateLabelMap.get(item.opportunityState?.state ?? "new") ?? "New"}
+                    </span>
                   </div>
                   <p className="ranked-item__reasons">
                     {item.reasons.length > 0
                       ? item.reasons.join(" | ")
                       : "No strong profile signals yet."}
                   </p>
+                  {item.opportunityState?.decisionReason || item.opportunityState?.decisionNote ? (
+                    <div className="opportunity-state-note">
+                      {item.opportunityState.decisionReason ? (
+                        <strong>{item.opportunityState.decisionReason}</strong>
+                      ) : null}
+                      {item.opportunityState.decisionNote ? (
+                        <p>{item.opportunityState.decisionNote}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="tag-row">
                     {item.naicsCodes.slice(0, 3).map((code) => (
                       <span className="filter-chip filter-chip--static" key={`${item.id}-naics-${code}`}>
@@ -460,6 +714,28 @@ export function FundingOpsOpportunitiesView({
                       View details
                     </button>
                   </p>
+                  <div className="inline-actions">
+                    {opportunityStateOptions.slice(1, 5).map((option) => (
+                      <button
+                        key={`${item.id}-${option.value}`}
+                        type="button"
+                        className="secondary-link"
+                        disabled={isSavingOpportunityState}
+                        onClick={() => {
+                          setBulkState(option.value);
+                          setBulkDecisionReason(item.opportunityState?.decisionReason ?? "");
+                          setBulkDecisionNote(item.opportunityState?.decisionNote ?? "");
+                          void saveOpportunityState([String(item.id)], {
+                            state: option.value,
+                            decisionReason: item.opportunityState?.decisionReason ?? "",
+                            decisionNote: item.opportunityState?.decisionNote ?? "",
+                          });
+                        }}
+                      >
+                        Mark {option.label}
+                      </button>
+                    ))}
+                  </div>
                   <p>
                     <a href={item.url} target="_blank" rel="noreferrer">
                       Open item source
@@ -505,7 +781,7 @@ export function FundingOpsOpportunitiesView({
         </div>
       </section>
 
-      {selectedItemId ? (
+      {detailItemId ? (
         <div className="modal-backdrop" role="presentation" onClick={closeDetailModal}>
           <section
             className="modal-panel panel"
@@ -529,7 +805,7 @@ export function FundingOpsOpportunitiesView({
               <div className="utility-bar__links">
                 <button
                   type="button"
-                  onClick={() => selectedItemId && void loadItemDetail(selectedItemId, "refresh")}
+                  onClick={() => detailItemId && void loadItemDetail(detailItemId, "refresh")}
                   disabled={isRefreshingDetail}
                 >
                   {isRefreshingDetail ? "Refreshing detail..." : "Refresh detail"}
