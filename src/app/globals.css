@@ -725,11 +725,23 @@ button:hover {
   align-items: stretch;
   padding: 18px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  transition: background-color 180ms ease, border-color 180ms ease;
+  cursor: pointer;
 }
 
 .ranked-item:first-child {
   border-top: 0;
   padding-top: 0;
+}
+
+.ranked-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ranked-item--selected {
+  background: rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.26) inset;
 }
 
 .ranked-item__order {
@@ -748,6 +760,7 @@ button:hover {
   width: 18px;
   height: 18px;
   margin: 0;
+  accent-color: #38bdf8;
 }
 
 .ranked-item__order span {
@@ -918,6 +931,43 @@ select {
   font: inherit;
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.opportunity-state-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(15, 118, 110, 0.16)),
+    rgba(7, 16, 24, 0.72);
+  border-color: rgba(56, 189, 248, 0.34);
+  color: #f6fafb;
+  font-weight: 600;
+  padding-right: 48px;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.12) inset;
+  background-image:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(15, 118, 110, 0.16)),
+    linear-gradient(45deg, transparent 50%, #d9f7ff 50%),
+    linear-gradient(135deg, #d9f7ff 50%, transparent 50%);
+  background-position:
+    0 0,
+    calc(100% - 22px) calc(50% - 2px),
+    calc(100% - 16px) calc(50% - 2px);
+  background-size:
+    100% 100%,
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
+}
+
+.opportunity-state-select:hover,
+.opportunity-state-select:focus {
+  background-color: rgba(12, 24, 36, 0.88);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.opportunity-state-select option {
+  color: #f6fafb;
+  background: #0f172a;
 }
 
 input::placeholder,

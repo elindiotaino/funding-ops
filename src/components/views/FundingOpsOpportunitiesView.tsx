@@ -20,7 +20,7 @@ import {
   useWorkspaceFilters,
   WorkspaceNotices,
 } from "@/components/FundingOpsShared";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState, type MouseEvent } from "react";
 
 type OpportunitiesViewProps = {
   appUrl: string;
@@ -199,6 +199,24 @@ export function FundingOpsOpportunitiesView({
         ? current.filter((entry) => entry !== itemId)
         : [...current, itemId],
     );
+  }
+
+  function handleRankedItemClick(event: MouseEvent<HTMLElement>, itemId: string) {
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'button, a, input, textarea, select, option, label, [role="dialog"], [data-no-item-select="true"]',
+      )
+    ) {
+      return;
+    }
+
+    const selectedText = typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "";
+    if (selectedText) {
+      return;
+    }
+
+    toggleItemSelection(itemId);
   }
 
   function toggleSelectVisibleItems() {
@@ -648,6 +666,7 @@ export function FundingOpsOpportunitiesView({
               <label>
                 <span>State</span>
                 <select
+                  className="opportunity-state-select"
                   value={bulkState}
                   onChange={(event) => setBulkState(event.target.value as OpportunityStateValue)}
                 >
@@ -721,9 +740,13 @@ export function FundingOpsOpportunitiesView({
             <div className="empty">No feed items match the current filters.</div>
           ) : (
             filteredItems.map((item, index) => (
-              <article className="ranked-item" key={item.id}>
+              <article
+                className={`ranked-item ${selectedItemIds.includes(String(item.id)) ? "ranked-item--selected" : ""}`}
+                key={item.id}
+                onClick={(event) => handleRankedItemClick(event, String(item.id))}
+              >
                 <div className="ranked-item__order">
-                  <label className="ranked-item__selector">
+                  <label className="ranked-item__selector" data-no-item-select="true">
                     <input
                       type="checkbox"
                       checked={selectedItemIds.includes(String(item.id))}
