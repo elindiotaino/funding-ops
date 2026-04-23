@@ -14,6 +14,7 @@ type DailySummaryPayload = {
   companyName: string;
   email: string;
   snapshotDate: string;
+  profileNaicsLabels: string[];
   totalAvailable: number;
   newItems: number;
   recommendedItems: number;
@@ -41,6 +42,7 @@ function buildTextBody(payload: DailySummaryPayload) {
   const intro =
     `Daily Funding Ops summary for ${payload.companyName}\n` +
     `Snapshot date: ${payload.snapshotDate}\n` +
+    `Account NAICS scope: ${payload.profileNaicsLabels.length > 0 ? payload.profileNaicsLabels.join(", ") : "No NAICS codes selected"}\n` +
     `Available to evaluate: ${payload.totalAvailable}\n` +
     `New since last summary: ${payload.newItems}\n` +
     `Recommended matches: ${payload.recommendedItems}\n\n` +
@@ -84,6 +86,7 @@ function buildHtmlBody(payload: DailySummaryPayload) {
       <p style="margin-top:0;">Top relevant items for ${payload.companyName}.</p>
       <ul style="padding-left:20px;">
         <li>Snapshot date: ${payload.snapshotDate}</li>
+        <li>Account NAICS scope: ${payload.profileNaicsLabels.length > 0 ? payload.profileNaicsLabels.join(", ") : "No NAICS codes selected"}</li>
         <li>Available to evaluate: ${payload.totalAvailable}</li>
         <li>New since last summary: ${payload.newItems}</li>
         <li>Recommended matches: ${payload.recommendedItems}</li>

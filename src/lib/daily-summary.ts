@@ -6,6 +6,7 @@ import {
   type RawCompanyProfile,
   type RawFeedItem,
 } from "@/lib/feed";
+import { formatNaicsLabel } from "@/lib/naics";
 import { markFundingProfileDailySummarySent } from "@/lib/funding-profile";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseServiceRoleEnv } from "@/lib/supabase/env";
@@ -154,6 +155,10 @@ function startOfUtcDay(value: string) {
 
 function isSentToday(lastSentAt: string | null) {
   return Boolean(lastSentAt && startOfUtcDay(lastSentAt) === startOfUtcDay(new Date().toISOString()));
+}
+
+function stripNaicsReason(reasons: string[]) {
+  return reasons.filter((reason) => !reason.startsWith("NAICS match:"));
 }
 
 async function listAuthUsers() {
@@ -428,6 +433,7 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       companyName: profile.companyName,
       email,
       snapshotDate: snapshotDate ?? new Date().toISOString().slice(0, 10),
+      profileNaicsLabels: profile.naicsCodes.map((code) => formatNaicsLabel(code)),
       totalAvailable,
       newItems,
       recommendedItems,
@@ -435,7 +441,7 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
         title: item.title,
         url: item.url,
         relevanceScore: item.relevanceScore,
-        reasons: item.reasons,
+        reasons: stripNaicsReason(item.reasons),
         category: item.category,
         jurisdiction: item.jurisdiction,
         deadline: item.deadline,
