@@ -137,6 +137,10 @@ export function FundingOpsOpportunitiesView({
     () => new Map(workspace.sources.map((source) => [source.sourceKey, source.name])),
     [workspace.sources],
   );
+  const reviewReasonOptions = useMemo(
+    () => workspace.metrics.reviewReasons.map((entry) => entry.reason),
+    [workspace.metrics.reviewReasons],
+  );
   const allVisibleItemIds = useMemo(
     () => filteredItems.map((item) => String(item.id)),
     [filteredItems],
@@ -538,6 +542,18 @@ export function FundingOpsOpportunitiesView({
                     }))
                   }
                 />
+                <SelectionGroup
+                  label="Review reasons"
+                  options={reviewReasonOptions}
+                  selected={filters.reviewReasons}
+                  onToggle={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      reviewReasons: toggleSelection(current.reviewReasons, value),
+                    }))
+                  }
+                  emptyCopy="No structured review reasons have been saved yet."
+                />
               </div>
             </div>
           </div>
@@ -594,6 +610,31 @@ export function FundingOpsOpportunitiesView({
             </span>
           </div>
         </div>
+        {workspace.metrics.reviewReasons.length > 0 ? (
+          <div className="opportunity-reason-filters">
+            <span className="opportunity-reason-filters__label">Common review reasons</span>
+            <div className="chip-grid">
+              {workspace.metrics.reviewReasons.map((entry) => {
+                const active = filters.reviewReasons.includes(entry.reason);
+                return (
+                  <button
+                    key={`reason-filter-${entry.reason}`}
+                    type="button"
+                    className={`filter-chip ${active ? "filter-chip--active" : ""}`}
+                    onClick={() =>
+                      setFilters((current) => ({
+                        ...current,
+                        reviewReasons: toggleSelection(current.reviewReasons, entry.reason),
+                      }))
+                    }
+                  >
+                    {entry.reason} ({entry.count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         {selectedItemIds.length > 0 ? (
           <div className="opportunity-bulk-panel">
             <div className="opportunity-bulk-panel__header">

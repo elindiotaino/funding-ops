@@ -372,6 +372,19 @@ button:hover {
   font-size: 0.92rem;
 }
 
+.opportunity-reason-filters {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.opportunity-reason-filters__label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
 .opportunity-bulk-panel {
   display: grid;
   gap: 16px;

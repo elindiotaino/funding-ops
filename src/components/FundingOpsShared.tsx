@@ -12,6 +12,7 @@ export type FilterState = {
   jurisdictions: string[];
   tags: string[];
   naicsCodes: string[];
+  reviewReasons: string[];
   onlyRecommended: boolean;
 };
 
@@ -37,6 +38,7 @@ export const initialFilters: FilterState = {
   jurisdictions: [],
   tags: [],
   naicsCodes: [],
+  reviewReasons: [],
   onlyRecommended: false,
 };
 
@@ -191,6 +193,9 @@ export function useWorkspaceFilters(workspace: FundingWorkspaceData, filters: Fi
       const matchesTag =
         filters.tags.length === 0 || item.tags.some((tag) => filters.tags.includes(tag));
       const matchesNaics = hasCompatibleNaicsCodes(filters.naicsCodes, item.naicsCodes);
+      const matchesReviewReason =
+        filters.reviewReasons.length === 0 ||
+        filters.reviewReasons.includes(item.opportunityState?.decisionReason?.trim() ?? "");
       const matchesRecommendation = !filters.onlyRecommended || item.relevanceScore >= 45;
 
       return (
@@ -199,6 +204,7 @@ export function useWorkspaceFilters(workspace: FundingWorkspaceData, filters: Fi
         matchesJurisdiction &&
         matchesTag &&
         matchesNaics &&
+        matchesReviewReason &&
         matchesRecommendation
       );
     });
