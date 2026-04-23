@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireFundingOpsApiAccess } from "@/lib/auth/access";
+import { runDailySummarySweep } from "@/lib/daily-summary";
 import { getFundingProfileForUser } from "@/lib/funding-profile";
 import { triggerDailyRefresh } from "@/lib/ingest/client";
 
@@ -28,18 +29,15 @@ export async function GET(request: Request) {
     }
 
     const refresh = await triggerDailyRefresh("cron");
+    const dailySummary = await runDailySummarySweep();
 
     return NextResponse.json({
       refresh,
-      dailySummary: {
-        sent: false,
-        skipped: true,
-        reason:
-          "Daily summary email is skipped in cron until per-user shared profile delivery is implemented.",
-      },
+      dailySummary,
     });
   } catch (error) {
     if (isMissingIngestConfigError(error)) {
+      const dailySummary = await runDailySummarySweep();
       return NextResponse.json({
         refresh: {
           runId: "cron-ingest-not-configured",
@@ -48,12 +46,7 @@ export async function GET(request: Request) {
         },
         notice:
           "The live ingest service is not configured for this deployment yet. Cron is skipping refresh instead of failing.",
-        dailySummary: {
-          sent: false,
-          skipped: true,
-          reason:
-            "Daily summary email is skipped in cron until per-user shared profile delivery is implemented.",
-        },
+        dailySummary,
       });
     }
 

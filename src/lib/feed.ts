@@ -60,7 +60,7 @@ export type RawCompanyProfile = CompanyProfileInput & {
   lastDailySummaryAt: string | null;
 };
 
-type RawFeedItem = {
+export type RawFeedItem = {
   id: number | string;
   itemKey: string;
   sourceKey: string;
@@ -116,7 +116,7 @@ type RawIngestionRun = {
   createdAt: string;
 };
 
-type ScoredItem = RawFeedItem & {
+export type ScoredItem = RawFeedItem & {
   relevanceScore: number;
   reasons: string[];
 };
@@ -1054,7 +1054,7 @@ function buildNotifications(items: ScoredItem[], profile: RawCompanyProfile) {
     })) satisfies RawNotification[];
 }
 
-function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
+export function scoreItemForProfile(item: RawFeedItem, profile: RawCompanyProfile) {
   const searchable = buildSearchableText(item);
   const reasons: string[] = [];
   let score = 0;
@@ -1123,7 +1123,10 @@ function scoreItem(item: RawFeedItem, profile: RawCompanyProfile) {
   };
 }
 
-  function matchesEmailPreferences(item: RawFeedItem | ScoredItem, profile: RawCompanyProfile) {
+export function matchesEmailPreferencesForProfile(
+  item: RawFeedItem | ScoredItem,
+  profile: RawCompanyProfile,
+) {
   const matchesNaics = hasCompatibleNaicsCodes(profile.naicsCodes, item.naicsCodes);
   const matchesCategories =
     profile.emailCategories.length === 0 || profile.emailCategories.includes(item.category);
@@ -1268,7 +1271,7 @@ function syncNotificationsForProfile(profile: RawCompanyProfile) {
 
   const transaction = sqlite.transaction(() => {
     for (const item of items) {
-      const scored = scoreItem(item, profile);
+      const scored = scoreItemForProfile(item, profile);
       if (scored.score < 45) {
         continue;
       }
@@ -1394,7 +1397,7 @@ export async function getDailySummaryEmailPayload(profileOverride?: RawCompanyPr
   const profile = profileOverride ?? getProfile();
   const items = (await getFundingWorkspaceData(undefined, profile)).items
     .filter((item) => item.relevanceScore >= 55)
-    .filter((item) => matchesEmailPreferences(item, profile))
+    .filter((item) => matchesEmailPreferencesForProfile(item, profile))
     .slice(0, 5);
 
   if (!profile.dailySummaryEnabled) {
@@ -1465,7 +1468,7 @@ export async function getFundingWorkspaceData(
     getFeedItems({ page: 1, pageSize: Math.max(pageSize, sqliteTotalItems || pageSize) });
   const scopedItems = (remoteWorkspace?.items ?? baseItems)
     .map((item) => {
-      const scored = scoreItem(item, profile);
+      const scored = scoreItemForProfile(item, profile);
       return {
         ...item,
         relevanceScore: scored.score,

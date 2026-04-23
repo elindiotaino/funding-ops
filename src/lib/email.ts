@@ -13,6 +13,10 @@ type DailySummaryItem = {
 type DailySummaryPayload = {
   companyName: string;
   email: string;
+  snapshotDate: string;
+  totalAvailable: number;
+  newItems: number;
+  recommendedItems: number;
   items: DailySummaryItem[];
 };
 
@@ -34,7 +38,13 @@ function formatDeadline(deadline: string | null) {
 }
 
 function buildTextBody(payload: DailySummaryPayload) {
-  const intro = `Daily Funding Ops summary for ${payload.companyName}\n\nTop relevant items:\n`;
+  const intro =
+    `Daily Funding Ops summary for ${payload.companyName}\n` +
+    `Snapshot date: ${payload.snapshotDate}\n` +
+    `Available to evaluate: ${payload.totalAvailable}\n` +
+    `New since last summary: ${payload.newItems}\n` +
+    `Recommended matches: ${payload.recommendedItems}\n\n` +
+    `Top relevant items:\n`;
   const items = payload.items
     .map(
       (item, index) =>
@@ -72,6 +82,12 @@ function buildHtmlBody(payload: DailySummaryPayload) {
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;">
       <h1 style="margin-bottom:8px;">Daily Funding Ops Summary</h1>
       <p style="margin-top:0;">Top relevant items for ${payload.companyName}.</p>
+      <ul style="padding-left:20px;">
+        <li>Snapshot date: ${payload.snapshotDate}</li>
+        <li>Available to evaluate: ${payload.totalAvailable}</li>
+        <li>New since last summary: ${payload.newItems}</li>
+        <li>Recommended matches: ${payload.recommendedItems}</li>
+      </ul>
       <ol style="padding-left:20px;">${items}</ol>
     </div>
   `;
