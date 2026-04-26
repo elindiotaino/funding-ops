@@ -9,6 +9,7 @@ import {
 import {
   findCompatibleNaicsCodes,
   formatNaicsLabel,
+  getFullNaicsOption,
   getNaicsKeywords,
   hasCompatibleNaicsCodes,
   inferNaicsCodesFromText,
@@ -187,6 +188,39 @@ type FundingWorkspaceOptions = {
   viewerProfileId?: string;
 };
 
+const actionableOpportunitySourceKeys = new Set([
+  "grants-gov",
+  "simpler-grants",
+  "usajobs",
+  "empleos-pr",
+  "cdbg-recuperacion",
+  "ddec",
+]);
+
+const actionableOpportunityCategories = new Set([
+  "grants",
+  "jobs",
+  "incentives",
+  "recovery-funding",
+]);
+
+const ignoredNaicsIntentTokens = new Set([
+  "and",
+  "for",
+  "the",
+  "other",
+  "services",
+  "service",
+  "custom",
+  "providers",
+  "provider",
+  "management",
+  "consulting",
+  "related",
+  "infrastructure",
+  "systems",
+]);
+
 type OpportunityFeedbackProfile = {
   currentStateByItemId: Map<string, UserOpportunityStateRecord>;
   positiveTokenWeights: Map<string, number>;
@@ -217,6 +251,13 @@ export const defaultProfile: CompanyProfileInput = {
   emailJurisdictions: [],
   emailTags: [],
 };
+
+export function isActionableOpportunityItem(item: Pick<RawFeedItem, "sourceKey" | "category">) {
+  return (
+    actionableOpportunitySourceKeys.has(item.sourceKey) ||
+    actionableOpportunityCategories.has(item.category)
+  );
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -297,6 +338,51 @@ const ignoredFeedbackTokens = new Set([
 
 function filterFeedbackTokens(tokens: string[]) {
   return tokens.filter((token) => token.length >= 4 && !ignoredFeedbackTokens.has(token));
+}
+
+function isBroadSectorCode(code: string) {
+  return /^\d{2}$/.test(code.trim()) || /^(31-33|44-45|48-49)$/.test(code.trim());
+}
+
+function getNaicsIntentTokens(codes: string[]) {
+  return Array.from(
+    new Set(
+      codes.flatMap((code) => {
+        const fullOption = getFullNaicsOption(code);
+        if (!fullOption || fullOption.code.length < 4) {
+          return [];
+        }
+
+        return normalizeTokens([fullOption.label]).filter(
+          (token) => token.length >= 4 && !ignoredNaicsIntentTokens.has(token),
+        );
+      }),
+    ),
+  );
+}
+
+function getNaicsMatchContext(profileCodes: string[], itemCodes: string[], searchable: string) {
+  const compatibleCodes = findCompatibleNaicsCodes(profileCodes, itemCodes);
+  const exactOrDetailedMatches = compatibleCodes.filter((selectedCode) =>
+    itemCodes.some((itemCode) => {
+      const normalizedItemCode = itemCode.trim();
+      return (
+        normalizedItemCode === selectedCode ||
+        (!isBroadSectorCode(normalizedItemCode) &&
+          (selectedCode.startsWith(normalizedItemCode) || normalizedItemCode.startsWith(selectedCode)))
+      );
+    }),
+  );
+  const intentMatches = getNaicsIntentTokens(profileCodes).filter((token) =>
+    searchable.includes(token),
+  );
+
+  return {
+    compatibleCodes,
+    exactOrDetailedMatches,
+    intentMatches,
+    isBroadOnly: compatibleCodes.length > 0 && exactOrDetailedMatches.length === 0,
+  };
 }
 
 const sourceSeeds: SourceSeed[] = [
@@ -1330,7 +1416,7 @@ export function scoreItemForProfile(
   const searchable = buildSearchableText(item);
   const reasons: string[] = [];
   let score = 0;
-  const naicsMatches = findCompatibleNaicsCodes(profile.naicsCodes, item.naicsCodes);
+  const naicsMatch = getNaicsMatchContext(profile.naicsCodes, item.naicsCodes, searchable);
 
   const keywordMatches = normalizeTokens(profile.keywords).filter((token) =>
     searchable.includes(token),
@@ -1347,20 +1433,36 @@ export function scoreItemForProfile(
     reasons.push(`Matches geography: ${profile.geography}`);
   }
 
-  if (profile.naicsCodes.length > 0 && naicsMatches.length === 0) {
+  if (profile.naicsCodes.length > 0 && naicsMatch.compatibleCodes.length === 0) {
     return {
       score: 0,
       reasons: ["No NAICS compatibility match."],
     };
   }
 
-  if (naicsMatches.length > 0) {
+  if (
+    profile.naicsCodes.length > 0 &&
+    naicsMatch.isBroadOnly &&
+    naicsMatch.intentMatches.length === 0
+  ) {
+    return {
+      score: 0,
+      reasons: ["Broad NAICS sector overlap only; no selected service keywords."],
+    };
+  }
+
+  if (naicsMatch.exactOrDetailedMatches.length > 0) {
     score += 30;
     reasons.push(
-      `NAICS match: ${naicsMatches
+      `NAICS match: ${naicsMatch.exactOrDetailedMatches
         .slice(0, 2)
         .map((code) => formatNaicsLabel(code))
         .join(", ")}`,
+    );
+  } else if (naicsMatch.compatibleCodes.length > 0) {
+    score += 14;
+    reasons.push(
+      `Broad NAICS sector overlap with ${naicsMatch.intentMatches.slice(0, 3).join(", ")}`,
     );
   }
 
@@ -1851,18 +1953,19 @@ export async function getFundingWorkspaceData(
   const baseItems =
     remoteWorkspace?.items ??
     getFeedItems({ page: 1, pageSize: Math.max(pageSize, sqliteTotalItems || pageSize) });
-  const feedbackProfile = await buildOpportunityFeedbackProfile(options?.viewerProfileId, baseItems);
+  const actionableBaseItems = baseItems.filter(isActionableOpportunityItem);
+  const feedbackProfile = await buildOpportunityFeedbackProfile(options?.viewerProfileId, actionableBaseItems);
   const opportunityStates =
     options?.viewerProfileId && hasSupabaseServiceRoleEnv()
       ? await listUserOpportunityStates(
           options.viewerProfileId,
-          (remoteWorkspace?.items ?? baseItems).map((item) => String(item.id)),
+          actionableBaseItems.map((item) => String(item.id)),
         )
       : [];
   const opportunityStateByItemId = new Map(
     opportunityStates.map((state) => [state.feedItemId, state] satisfies [string, UserOpportunityStateRecord]),
   );
-  const scopedItems = (remoteWorkspace?.items ?? baseItems)
+  const scopedItems = actionableBaseItems
     .map((item) => {
       const scored = scoreItemForProfile(item, profile, feedbackProfile);
       const savedState = opportunityStateByItemId.get(String(item.id));

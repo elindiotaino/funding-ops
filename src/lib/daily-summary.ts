@@ -2,6 +2,7 @@ import { sendDailySummaryEmail } from "@/lib/email";
 import {
   buildOpportunityFeedbackProfile,
   defaultProfile,
+  isActionableOpportunityItem,
   matchesEmailPreferencesForProfile,
   scoreItemForProfile,
   type RawCompanyProfile,
@@ -416,12 +417,13 @@ export async function runDailySummarySweep(): Promise<DailySummarySweepResult> {
       continue;
     }
 
+    const actionableFeedItems = feedItems.filter(isActionableOpportunityItem);
     const [stateRows, feedbackProfile] = await Promise.all([
       listUserOpportunityStates(profileId),
-      buildOpportunityFeedbackProfile(profileId, feedItems),
+      buildOpportunityFeedbackProfile(profileId, actionableFeedItems),
     ]);
     const stateByItemId = new Map(stateRows.map((row) => [row.feedItemId, row]));
-    const scopedItems = feedItems
+    const scopedItems = actionableFeedItems
       .map((item) => {
         const scored = scoreItemForProfile(item, profile, feedbackProfile);
         const opportunityState = stateByItemId.get(String(item.id)) ?? null;
